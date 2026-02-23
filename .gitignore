@@ -1,0 +1,22 @@
+# Rust
+/target
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.noggin/
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+
+# Environment
+.env
+.env.local
