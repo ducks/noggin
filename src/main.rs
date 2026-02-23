@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use llm_noggin::commands::init::init_command;
 
 #[derive(Parser)]
 #[command(name = "noggin")]
@@ -37,10 +38,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     
     match cli.command {
-        Commands::Init => {
-            println!("[noggin init] Not implemented yet");
-            Ok(())
-        }
+        Commands::Init => init_command(),
         Commands::Learn { verify } => {
             if verify {
                 println!("[noggin learn --verify] Not implemented yet");
