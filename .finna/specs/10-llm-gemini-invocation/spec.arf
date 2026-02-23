@@ -1,0 +1,15 @@
+order = 10
+what = "Invoke Gemini CLI as child process and parse its output"
+why = "Gemini provides deep security audits and thorough multi-file analysis when exploration matters more than speed. We need to capture its agentic investigation output for knowledge synthesis."
+
+how = """
+1. Add `tokio::process::Command` support to gemini.rs module (already has gemini_cli function)
+2. Invoke `npx @google/gemini-cli <prompt>` with tokio::process::Command
+   - Set working directory to project root
+   - Pass prompt as single command-line argument
+   - Capture stdout/stderr separately
+   - Set timeout (5 minutes default, configurable via CLI flag)
+3. Parse Gemini output format:
+   - Output is plain text with structured sections
+   - Look for markdown headers (## Section Name)
+   - Extract code blocks (

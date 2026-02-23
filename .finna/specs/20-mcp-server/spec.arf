@@ -1,0 +1,125 @@
+order = 20
+what = "Implement MCP server for querying .noggin/ knowledge base"
+why = "Expose structured codebase knowledge to LLMs via MCP protocol so other AI tools can query noggin's findings without direct filesystem access or re-analysis"
+how = """
+Step-by-step implementation plan:
+
+1. Add MCP dependencies to Cargo.toml
+   - mcp-server crate for protocol implementation
+   - tokio for async runtime (likely already present)
+   - serde_json for MCP message serialization
+
+2. Create src/mcp/mod.rs module structure
+   - src/mcp/server.rs - MCP server initialization and lifecycle
+   - src/mcp/handlers.rs - Tool/resource handlers
+   - src/mcp/types.rs - MCP message types and schemas
+
+3. Implement MCP server initialization in src/mcp/server.rs
+   - Create NogginMcpServer struct wrapping noggin_root PathBuf
+   - Implement server startup with stdio transport
+   - Handle initialize/initialized handshake
+   - Register available tools and resources
+   - Add graceful shutdown on SIGINT/SIGTERM
+
+4. Define MCP tools in src/mcp/handlers.rs
+   - query_knowledge(query: String, category: Option<String>) -> search .noggin/ for matching ARF files
+   - get_decision(name: String) -> read specific decision ARF
+   - get_pattern(name: String) -> read specific pattern ARF
+   - get_migration(name: String) -> read specific migration ARF
+   - list_categories() -> return all ARF categories (decisions/, patterns/, etc)
+
+5. Implement resource endpoints in src/mcp/handlers.rs
+   - noggin://manifest - expose manifest.toml as resource
+   - noggin://index - expose index.toml as resource
+   - noggin://decisions/{name} - read decision ARF files
+   - noggin://patterns/{name} - read pattern ARF files
+   - noggin://migrations/{name} - read migration ARF files
+   - noggin://bugs/{name} - read bug ARF files
+   - noggin://facts/{name} - read fact ARF files
+
+6. Add query_knowledge search logic
+   - Parse .noggin/index.toml for searchable metadata
+   - Use grep/ripgrep for content search across ARF files
+   - Support filtering by category (decisions, patterns, migrations, bugs, facts)
+   - Return list of matching files with excerpts
+   - Rank results by relevance (exact matches > partial matches)
+
+7. Create src/commands/serve.rs for CLI integration
+   - Parse --port flag (default: stdio)
+   - Validate .noggin/ directory exists (error if not)
+   - Initialize and run MCP server
+   - Log server startup and connection info
+
+8. Wire serve command into src/main.rs
+   - Add ServeCommand to Commands enum
+   - Match serve => commands::serve::execute()
+   - Add 'noggin serve' to help text
+
+9. Add MCP protocol tests in tests/mcp_server_tests.rs
+   - Test initialize handshake
+   - Test each tool call (query_knowledge, get_decision, etc)
+   - Test resource fetching (noggin://manifest, etc)
+   - Test error handling (missing files, invalid queries)
+   - Test graceful shutdown
+
+10. Add integration test with mock .noggin/ directory
+    - Create fixtures/.noggin/ with sample ARF files
+    - Start server in test, send MCP requests
+    - Verify responses match expected format
+    - Test search across multiple categories
+
+11. Update README.md with MCP server documentation
+    - Usage: noggin serve
+    - MCP tools available (query_knowledge, get_decision, etc)
+    - MCP resources available (noggin://manifest, etc)
+    - Example queries from Claude Desktop or other MCP clients
+    - Configuration in MCP client settings (stdio transport)
+
+12. Add error handling for server failures
+    - Handle port already in use (if TCP mode added later)
+    - Handle corrupted manifest.toml or index.toml
+    - Handle missing .noggin/ directory
+    - Return proper MCP error responses (not panics)
+
+13. Implement response streaming for large results
+    - If query_knowledge returns many matches, stream results
+    - Use MCP notifications for progress updates
+    - Set reasonable limits (max 50 results per query)
+
+14. Add caching layer for frequent queries
+    - Cache parsed manifest.toml and index.toml in memory
+    - Invalidate cache if files change (watch filesystem or check mtime)
+    - Cache parsed ARF files for 5 minutes
+    - Reduces disk I/O for repeated queries
+
+15. Test end-to-end with Claude Desktop
+    - Add noggin MCP server to Claude Desktop config
+    - Run 'noggin serve' and connect from Claude
+    - Query knowledge base: "How do we handle authentication?"
+    - Verify Claude receives and displays results correctly
+    - Test multiple query types (decisions, patterns, bugs)
+"""
+backup = "If MCP crate is unstable or poorly documented, implement custom JSON-RPC 2.0 server over stdio matching MCP protocol spec manually. If performance is poor, add in-memory SQLite index built from manifest.toml on server startup for faster queries. If ARF files are too large to return directly, add summarization step using local LLM before returning to client."
+
+[context]
+files = [
+    "src/main.rs",
+    "src/commands/mod.rs",
+    "src/arf.rs",
+    "src/manifest.rs",
+    ".noggin/manifest.toml",
+    ".noggin/index.toml",
+    ".noggin/decisions/",
+    ".noggin/patterns/",
+    ".noggin/migrations/",
+    ".noggin/bugs/",
+    ".noggin/facts/"
+]
+dependencies = [
+    "mcp-server",
+    "tokio",
+    "serde_json",
+    "anyhow",
+    "ripgrep or grep for content search",
+    "notify or similar for filesystem watching (optional cache invalidation)"
+]

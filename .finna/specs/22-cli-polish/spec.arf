@@ -1,0 +1,116 @@
+order = 22
+what = "Add CLI polish: progress bars, colors, verify flag, help text, shell completions"
+why = "Professional CLI UX is critical for developer tools. Progress bars show activity during long-running multi-model analysis, colors improve scannability of output, --verify enables CI/CD validation, comprehensive help text aids discovery, and shell completions reduce friction for daily use. This transforms noggin from prototype to production-ready tool."
+
+how = """
+Step-by-step implementation plan:
+
+1. Add indicatif dependency for progress bars
+   - Add `indicatif = "0.17"` to Cargo.toml
+   - Add `console = "0.15"` for terminal detection and styling
+   - These are standard Rust CLI libraries with minimal overhead
+
+2. Implement progress bar infrastructure in src/cli/progress.rs
+   - Create ProgressReporter trait with methods: start(), update(), finish()
+   - Implement MultiProgress wrapper for nested progress bars
+   - Add spinner for indeterminate operations (git history parsing)
+   - Add progress bar for deterministic operations (file scanning with known count)
+   - Support --quiet flag to suppress all progress output
+   - Auto-detect TTY and disable progress bars for non-interactive shells
+
+3. Add colored output using console crate
+   - Create src/cli/output.rs module with colored formatting helpers
+   - Add success/error/warning/info message functions with color codes
+   - Use green for success, red for errors, yellow for warnings, blue for info
+   - Add dim/bold helpers for emphasis
+   - Respect NO_COLOR environment variable
+   - Auto-detect TTY and disable colors for non-interactive shells
+
+4. Integrate progress bars into noggin learn command
+   - Show spinner during git history analysis: "Analyzing git history..."
+   - Show progress bar during file scanning: "[===>   ] 234/1000 files scanned"
+   - Show progress bar during model analysis: "[==>    ] 2/5 models complete (Claude, Codex)"
+   - Show progress bar during ARF file generation: "[====>  ] 45/67 ARF files written"
+   - Display summary on completion: "✓ Scanned 1000 files, generated 67 ARF files in 2m 34s"
+
+5. Add --verify flag to noggin learn
+   - Add verify: bool field to LearnArgs struct
+   - When --verify is set: run full diff between current manifest and expected state
+   - Report files that changed but weren't scanned (manifest drift)
+   - Report new commits not in manifest
+   - Report ARF files that would be regenerated
+   - Exit with code 0 if no drift, code 1 if drift detected
+   - Use case: CI/CD checks to ensure .noggin/ is up to date
+
+6. Improve help text for all commands
+   - Add long_about to clap derive macros with detailed descriptions
+   - Add examples to help text using after_help or after_long_help
+   - Document manifest.toml format in noggin init help
+   - Document query syntax in noggin ask help
+   - Add --help-verbose flag that shows extended examples
+   - Ensure help text mentions --quiet and NO_COLOR env var
+
+7. Generate shell completions using clap_complete
+   - Add clap_complete dependency to Cargo.toml
+   - Create src/cli/completions.rs module
+   - Add noggin completions <shell> subcommand
+   - Support bash, zsh, fish, powershell, elvish
+   - Generate completions for all subcommands and flags
+   - Include installation instructions in help text
+   - Example: noggin completions bash > ~/.local/share/bash-completion/completions/noggin
+
+8. Add man page generation using clap_mangen
+   - Add clap_mangen = "0.2" to Cargo.toml (optional, only in dev-dependencies)
+   - Create build script or separate tool to generate man pages
+   - Generate noggin.1, noggin-learn.1, noggin-ask.1, etc.
+   - Include man pages in cargo install or package distribution
+   - Document man page location in README
+
+9. Update existing commands to use new output infrastructure
+   - Replace println! with colored output functions
+   - Add progress bars to noggin learn (main use case)
+   - Add success/error messages to noggin init
+   - Add status summary to noggin status with colors
+   - Ensure noggin ask output remains clean (no progress bars, colors OK for highlights)
+
+10. Add tests for CLI output
+    - Add test that --quiet suppresses all output
+    - Add test that --verify detects manifest drift
+    - Add test that progress bars don't crash in non-TTY mode
+    - Add test that colors are disabled when NO_COLOR=1
+    - Add integration test that shell completions work for bash/zsh
+
+11. Update README with new CLI features
+    - Document --verify flag and CI/CD use case
+    - Document --quiet flag
+    - Document NO_COLOR and other environment variables
+    - Add shell completion installation instructions
+    - Add examples with colored output (use code blocks with # comments)
+
+12. Smoke test all CLI improvements
+    - Run noggin learn on real repo and verify progress bars render correctly
+    - Test noggin learn --verify on up-to-date repo (exit 0)
+    - Test noggin learn --verify on repo with uncommitted changes (exit 1)
+    - Generate bash completions and source them, verify tab completion works
+    - Test in non-TTY mode: noggin learn | cat (no progress bars, no colors)
+    - Test with NO_COLOR=1 (colors disabled)
+"""
+
+backup = "If indicatif progress bars cause issues (rendering bugs, performance), fall back to simple line-based output with periodic status updates (every N files). If clap_complete has API changes, generate completions manually using clap's generate functions. If --verify flag is too complex, implement simpler --check flag that only checks manifest hash without detailed diff."
+
+[context]
+files = [
+    "src/cli/mod.rs",
+    "src/cli/args.rs",
+    "src/commands/learn.rs",
+    "src/commands/init.rs",
+    "src/commands/status.rs",
+    "Cargo.toml",
+    "README.md"
+]
+dependencies = [
+    "indicatif 0.17 - Progress bars and spinners",
+    "console 0.15 - Terminal styling and TTY detection",
+    "clap_complete - Shell completion generation",
+    "clap_mangen 0.2 - Man page generation (optional)"
+]

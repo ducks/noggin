@@ -1,0 +1,55 @@
+order = 13
+what = "Calculate SHA-256 hashes for analyzed files, store in manifest, detect changes on subsequent runs"
+
+why = "Incremental learning requires knowing which files have changed since last analysis. SHA-256 hashes provide deterministic change detection - same content always produces same hash. This allows noggin to skip unchanged files during `noggin learn` and only process deltas, making subsequent runs orders of magnitude faster than full repo scans."
+
+how = """
+Step-by-step implementation plan:
+
+1. Add `sha2` crate to Cargo.toml for SHA-256 hashing
+
+2. Create `src/manifest.rs` module:
+   - Define `FileEntry` struct with fields: path (String), hash (String), scanned_at (String/ISO8601), patterns (Vec<String>)
+   - Define `Manifest` struct with `files: HashMap<String, FileEntry>` and `commits: HashMap<String, CommitEntry>`
+   - Implement `Manifest::load(path)` - read from `.noggin/manifest.toml`, return empty manifest if missing
+   - Implement `Manifest::save(path)` - serialize to TOML and write atomically (write to temp file, rename)
+   - Implement `Manifest::file_changed(&self, path, current_hash) -> bool` - compare stored hash with current
+
+3. Create `src/hash.rs` module:
+   - Implement `calculate_file_hash(path: &Path) -> Result<String, Error>`:
+     - Read file bytes
+     - Feed to SHA-256 hasher
+     - Return hex-encoded digest (64 hex chars)
+   - Handle errors: file not found, permission denied, I/O errors
+
+4. Update `src/learn.rs` to integrate manifest:
+   - At start of `learn` command, load manifest from `.noggin/manifest.toml`
+   - For each file to analyze:
+     - Calculate current SHA-256 hash
+     - Check `manifest.file_changed(path, current_hash)`
+     - If hash matches AND file still exists: skip analysis, reuse existing ARF files
+     - If hash differs OR file is new: mark for analysis
+   - After analysis completes:
+     - Update manifest with new hashes, timestamp (ISO8601), and pattern references
+     - Save manifest atomically
+   - Log stats: "X files unchanged (skipped), Y files changed (analyzed)"
+
+5. Handle edge cases:
+   - File deleted: remove from manifest during cleanup
+   - File renamed: appears as delete + new (acceptable for v1, can optimize later)
+   - Manifest corrupted: log warning, treat all files as changed
+   - Hash collision (theoretical): rely on SHA-256's collision resistance
+
+6. Add `noggin status` command:
+   - Load manifest
+   - Scan working directory
+   - Report: files tracked, files changed, files new, files deleted
+   - Show example: "42 files tracked, 3 changed, 1 new, 0 deleted"
+
+7. Create tests in `tests/hash_tests.rs`:
+   - Test hash calculation produces correct SHA-256
+   - Test manifest serialization/deserialization
+   - Test change detection (same content = same hash, different content = different hash)
+   - Test incremental behavior (second run skips unchanged files)
+
+8. Update `.noggin/manifest.toml` format documentation in README:

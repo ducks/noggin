@@ -1,0 +1,113 @@
+order = 4
+what = "Implement manifest.toml with file hashes, commit tracking, and pattern metadata for incremental learning"
+
+why = "The manifest is the core of noggin's incremental learning system. It tracks what has been analyzed (files, commits) with cryptographic hashes to detect changes, stores when analysis happened, and links files to their extracted patterns. This enables deterministic behavior (same codebase state produces same ARF files) and makes updates cheap by only processing deltas. Without the manifest, noggin would re-analyze the entire codebase on every run."
+
+how = """
+Step-by-step implementation plan:
+
+1. Create manifest module at src/manifest.rs
+   - Define Manifest struct with files, commits, patterns sections
+   - FileEntry: path, sha256 hash, last_scanned timestamp, pattern_ids Vec
+   - CommitEntry: sha, processed_at timestamp, category (decision/migration/bug), arf_path
+   - PatternEntry: id, name, contributing_files Vec, last_updated timestamp
+   - Derive Serialize/Deserialize for all structs
+
+2. Implement hash calculation
+   - Add sha2 crate to Cargo.toml
+   - fn calculate_file_hash(path: &Path) -> Result<String, Error>
+   - Read file, compute SHA-256, return hex string
+   - Handle errors (file not found, permission denied)
+
+3. Implement manifest I/O operations
+   - fn load_manifest(path: &Path) -> Result<Manifest, Error>
+   - Read .noggin/manifest.toml, parse with toml crate
+   - Return empty Manifest if file doesn't exist (first run)
+   - fn save_manifest(manifest: &Manifest, path: &Path) -> Result<(), Error>
+   - Serialize to TOML with pretty formatting
+   - Write atomically (write to temp file, rename)
+
+4. Add file tracking methods
+   - impl Manifest::add_or_update_file(path, hash, patterns)
+   - Update existing entry or create new one
+   - Set last_scanned to current timestamp (chrono::Utc::now)
+   - impl Manifest::get_file_hash(path) -> Option<&str>
+   - impl Manifest::is_file_changed(path, current_hash) -> bool
+
+5. Add commit tracking methods
+   - impl Manifest::add_commit(sha, category, arf_path)
+   - Store commit with processed_at timestamp
+   - impl Manifest::is_commit_processed(sha) -> bool
+   - impl Manifest::get_commits_since(sha) -> Vec<CommitEntry>
+
+6. Add pattern tracking methods
+   - impl Manifest::link_pattern_to_file(pattern_id, file_path)
+   - Add file to pattern's contributing_files list
+   - impl Manifest::get_patterns_for_file(path) -> Vec<String>
+   - impl Manifest::invalidate_pattern(pattern_id)
+   - Mark pattern for re-analysis when contributing file changes
+
+7. Implement change detection
+   - fn detect_file_changes(manifest, repo_path) -> Vec<PathBuf>
+   - Walk all tracked files, compare hashes
+   - Return list of changed/deleted files
+   - fn detect_new_commits(manifest, repo) -> Vec<Commit>
+   - Use git2-rs to walk commits after last processed SHA
+   - Return commits not in manifest
+
+8. Add status reporting
+   - impl Manifest::stats() -> ManifestStats
+   - Count files scanned, commits processed, patterns extracted
+   - Show last scan timestamp
+   - Calculate coverage percentage (tracked files / total files)
+
+9. Write unit tests
+   - Test hash calculation (known file, known SHA-256)
+   - Test manifest serialization round-trip
+   - Test change detection (modified file, new commit)
+   - Test pattern invalidation when file changes
+   - Mock file system with tempfile crate
+
+10. Add CLI integration hooks
+    - Export manifest functions in src/lib.rs
+    - Add --manifest-path flag support (default: .noggin/manifest.toml)
+    - Ensure noggin init creates empty manifest
+    - Add noggin status command to call manifest.stats()
+"""
+
+backup = """
+If TOML proves too limited for complex pattern relationships:
+- Switch to JSON for manifest (serde_json is more flexible)
+- Keep TOML for ARF files (human-readable knowledge)
+- Use SQLite for manifest (manifest.db with files/commits/patterns tables)
+  - Better query performance for large repos
+  - Native support for relationships and indexes
+  - Still deterministic and git-friendly (binary diff acceptable for metadata)
+
+If SHA-256 calculation is too slow on large repos:
+- Use file mtime + size as fast approximation
+- Fall back to SHA-256 only when mtime/size match (likely change)
+- Add --full-verify flag to force hash recalculation
+
+If git2-rs commit walking is memory-intensive:
+- Process commits in batches of 100
+- Stream results instead of loading all into memory
+- Add configurable batch size (--commit-batch-size)
+"""
+
+[context]
+files = [
+  "src/manifest.rs",
+  "src/lib.rs",
+  ".noggin/manifest.toml",
+  "Cargo.toml"
+]
+
+dependencies = [
+  "toml = \"0.8\" # TOML parsing and serialization",
+  "serde = { version = \"1.0\", features = [\"derive\"] } # Serialization framework",
+  "sha2 = \"0.10\" # SHA-256 hashing",
+  "chrono = { version = \"0.4\", features = [\"serde\"] } # Timestamps",
+  "git2 = \"0.19\" # Git commit walking",
+  "tempfile = \"3.10\" # Test file creation"
+]

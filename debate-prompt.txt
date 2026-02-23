@@ -1,0 +1,48 @@
+Build noggin: a knowledge extraction tool for codebases.
+
+Core functionality:
+- Multi-model codebase analysis (Claude, Codex, Gemini, local models)
+- Process git history to build change graph
+- Extract knowledge and store in ARF format (TOML files in .noggin/)
+- Query engine to answer questions about the codebase
+- MCP server to expose knowledge to other tools
+- Incremental learning (stable output, only process deltas)
+
+Learning pipeline:
+1. Multi-model codebase analysis (parallel)
+   - Claude: Architecture and patterns
+   - Codex: Code conventions and idioms
+   - Gemini: Dependencies and structure
+   - Local (Qwen/DeepSeek): File organization
+2. Synthesize consensus about current state
+3. Build git history graph (chronological, identify significant changes)
+4. Generate ARF files with commit links
+
+Storage structure:
+.noggin/
+├── decisions/    (architectural choices, links to commits/PRs)
+├── migrations/   (how things evolved over time)
+├── bugs/         (notable fixes and lessons learned)
+├── patterns/     (code patterns from analysis)
+├── facts/        (general knowledge, dependencies)
+├── manifest.toml (files scanned, hashes, timestamps, commit tracking)
+└── index.toml    (search metadata)
+
+Incremental learning:
+- manifest.toml tracks files analyzed (hash, timestamp, patterns)
+- Only re-analyze changed files on subsequent runs
+- Track processed commits to avoid re-processing
+- Stable output: same codebase state → same ARF files
+- Pattern invalidation when contributing files change
+
+Commands:
+- noggin init              (initialize .noggin/ directory)
+- noggin learn             (full or incremental based on manifest)
+- noggin learn --verify    (check for drift without overwriting)
+- noggin ask "..."         (query the knowledge base)
+- noggin serve             (MCP server for tool integration)
+- noggin status            (show what's scanned, what's pending)
+
+Tech stack: Rust, ARF format (TOML), git2-rs for history, MCP for tool integration
+
+Tagline: A noggin for your codebase

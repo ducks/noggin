@@ -1,0 +1,98 @@
+order = 17
+what = "Extend 'noggin learn' command to process only changed files and new commits based on manifest tracking"
+why = "First run of 'noggin learn' is expensive (analyzes entire codebase with multiple models). Subsequent runs should only process deltas: files that changed since last scan and commits that weren't processed yet. This makes incremental updates fast and practical for daily use while maintaining deterministic output (same repo state = same ARF files)."
+
+how = """
+Step-by-step implementation plan:
+
+1. Load manifest.toml to get current state:
+   - Parse [files] section to get map of file_path -> { hash, scanned, patterns }
+   - Parse [commits] section to get map of commit_sha -> { processed, category, arf }
+   - If manifest doesn't exist, treat as first run (process everything)
+
+2. Detect changed files since last scan:
+   - Walk working directory recursively (same as initial scan)
+   - For each file: compute SHA-256 hash of contents
+   - Compare hash to manifest[files][path].hash
+   - If hash differs OR file not in manifest: add to changed_files list
+   - If file in manifest but deleted from filesystem: remove from manifest
+
+3. Detect new commits since last scan:
+   - Use git2-rs to walk commit history from HEAD
+   - For each commit: check if commit.id() exists in manifest[commits]
+   - If not in manifest: add to new_commits list (chronologically ordered)
+   - Stop walking when we hit a commit that's already in manifest
+
+4. Run multi-model analysis only on changed files:
+   - Same parallel execution as full scan (Claude/Codex/Gemini/local)
+   - Pass only changed_files list to each model
+   - Models analyze just these files for patterns/conventions/structure
+   - Synthesize consensus from model outputs
+
+5. Process new commits for historical knowledge:
+   - For each commit in new_commits (chronological order):
+     - Extract commit message, diff, author, timestamp
+     - Categorize commit (decision/refactor/bug/migration) using LLM
+     - If significant: generate ARF file in appropriate directory
+     - Add entry to manifest[commits] with processed timestamp and category
+     - Link ARF file path if generated
+
+6. Invalidate affected patterns when dependencies change:
+   - For each changed file: check manifest[files][path].patterns array
+   - For each pattern referenced: check if pattern's contributing files changed
+   - If yes: mark pattern ARF for regeneration (re-analyze pattern across codebase)
+   - Example: if error-handling.arf references src/errors.rs and that file changed, regenerate error-handling.arf
+
+7. Update ARF files with new/changed knowledge:
+   - For changed patterns: regenerate pattern ARF files (re-analyze relevant files)
+   - For new commits: create decision/migration/bug ARF files as appropriate
+   - Use same ARF structure as initial scan (what/why/how/context with commit links)
+
+8. Update manifest.toml with new state:
+   - Update [files] section with new hashes and scan timestamps
+   - Update patterns arrays if pattern associations changed
+   - Add new [commits] entries for processed commits
+   - Write manifest atomically (write to temp file, rename)
+
+9. Handle edge cases:
+   - Empty delta (no changes): exit early with "No changes detected" message
+   - Manifest corruption: fall back to full scan with warning
+   - Git repo not found: skip commit processing, only analyze file changes
+   - File moved/renamed: treat as delete + add (hash will differ)
+
+10. Add --verify flag to check for drift without updating:
+    - Load manifest and compute current state
+    - Report files that changed and commits not processed
+    - Don't run models or update manifest
+    - Exit 0 if no drift, exit 1 if drift detected
+
+11. Add --full flag to force complete re-scan:
+    - Ignore manifest state
+    - Process all files and commits
+    - Useful if manifest is corrupted or analysis needs refresh
+
+12. Report delta statistics:
+    - Print: "Processed 5 changed files, 12 new commits"
+    - Print: "Regenerated 2 pattern ARFs (error-handling, api-endpoints)"
+    - Print: "Created 3 decision ARFs from significant commits"
+    - Show time saved vs full scan
+"""
+
+backup = "If pattern invalidation logic becomes too complex (determining which patterns need regeneration), simplify to: any file change triggers regeneration of ALL patterns that reference that file, even if change is unrelated. Less efficient but guaranteed correct. If manifest corruption is frequent, add manifest.toml.backup and auto-restore on corruption detection."
+
+[context]
+files = [
+  "src/main.rs",
+  "src/commands/learn.rs",
+  "src/manifest.rs",
+  "src/git.rs",
+  "src/models.rs",
+  "src/arf.rs"
+]
+dependencies = [
+  "git2 (commit walking and diff analysis)",
+  "sha2 (file content hashing)",
+  "toml (manifest parsing and serialization)",
+  "walkdir (filesystem traversal)",
+  "tokio (async model execution)"
+]

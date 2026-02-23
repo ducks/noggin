@@ -1,0 +1,150 @@
+order = 16
+what = "Implement full codebase analysis pipeline with multi-model invocation and ARF generation"
+why = "This is the core learning engine that orchestrates file scanning, git history walking, LLM analysis (parallel multi-model), consensus synthesis, and ARF file writing to build initial knowledge base"
+
+how = """
+Step-by-step implementation plan:
+
+1. Create src/commands/learn.rs with LearnCommand struct
+   - Add clap args: --verify (dry-run), --full (ignore manifest), --verbose
+   - Wire into main.rs command enum
+
+2. Create src/learn/mod.rs with submodules:
+   - mod scanner (file scanning)
+   - mod history (git walking)
+   - mod llm (multi-model invocation)
+   - mod synthesis (consensus building)
+   - mod writer (ARF generation)
+
+3. Implement src/learn/scanner.rs for file discovery:
+   - Use walkdir crate to traverse repo
+   - Respect .gitignore and .nogginignore
+   - Calculate SHA-256 hashes for each file
+   - Read manifest.toml to identify changed files (compare hashes)
+   - Return Vec<FileToAnalyze> with path, hash, size, last_modified
+
+4. Implement src/learn/history.rs for git analysis:
+   - Use git2-rs to walk commits from HEAD
+   - Read manifest.toml [commits] to identify unprocessed commits
+   - Filter commits by category (refactor, feature, bugfix, decision)
+   - Extract commit message, author, date, changed files
+   - Detect significant commits (>N files changed, keywords like 'refactor', 'migrate', 'fix')
+   - Return Vec<CommitToAnalyze> with hash, message, timestamp, category
+
+5. Implement src/learn/llm.rs for multi-model invocation:
+   - Create trait LlmProvider with method analyze(prompt: &str) -> Result<String>
+   - Implement ClaudeProvider using shell command: nix-shell codex.nix --run "codex exec --json 'prompt'"
+   - Implement CodexProvider using shell command: nix-shell codex.nix --run "codex exec --json 'prompt'"
+   - Implement GeminiProvider using shell command: nix-shell gemini-cli.nix --run "npx @google/gemini-cli 'prompt'"
+   - Use tokio::process::Command for async shell execution
+   - Parse JSON output to extract agent_message field
+   - Run all three providers in parallel with tokio::spawn
+   - Add timeout (5 minutes per model) and retry logic (3 retries with exponential backoff)
+
+6. Create analysis prompts in src/learn/prompts.rs:
+   - ANALYZE_PATTERNS: "Analyze this codebase. Identify architectural patterns, error handling conventions, testing approaches. Output structured findings."
+   - ANALYZE_COMMIT: "Analyze this commit. Explain what changed, why it changed (infer from message and diff), and architectural impact. Output structured findings."
+   - SYNTHESIZE_CONSENSUS: "Given these 3 LLM analyses, produce consensus view. Where models agree, state confidently. Where they disagree, note alternatives."
+
+7. Implement src/learn/synthesis.rs for consensus building:
+   - Take Vec<(ModelName, Analysis)> from parallel LLM calls
+   - Extract common themes (pattern names, decision rationales)
+   - Identify disagreements (conflicting interpretations)
+   - Use weighted voting (Claude=3, Codex=2, Gemini=2 for code analysis)
+   - Generate ARF-compatible output with what/why/how/context structure
+
+8. Implement src/learn/writer.rs for ARF generation:
+   - Create .noggin/ directory structure (decisions/, patterns/, bugs/, migrations/, facts/)
+   - Generate ARF files from synthesized analysis
+   - Patterns go in .noggin/patterns/<pattern-name>.arf
+   - Decisions go in .noggin/decisions/<commit-hash-short>.arf with [context.commits]
+   - Bugs go in .noggin/bugs/<issue-or-commit>.arf with [context.fixed_in]
+   - Include context.files with list of files implementing pattern/decision
+   - Include context.commits with relevant commit hashes
+
+9. Update manifest.toml after successful analysis:
+   - Add [files.<path>] entries with hash, scanned timestamp, patterns list
+   - Add [commits.<hash>] entries with processed timestamp, category, arf path
+   - Write atomically (temp file + rename) to prevent corruption
+
+10. Add progress reporting:
+   - Use indicatif crate for progress bars
+   - Show: "Scanning files (45/120)", "Analyzing commits (12/34)", "Invoking LLMs (2/3)"
+   - Display elapsed time and estimated time remaining
+
+11. Implement incremental vs full analysis logic:
+   - Read manifest.toml at start
+   - If --full flag: ignore manifest, analyze everything
+   - If no manifest: treat as first run (full analysis)
+   - Otherwise: only analyze files with changed hashes and new commits
+   - Skip pattern re-analysis if all contributing files unchanged
+
+12. Add error handling and recovery:
+   - If LLM invocation fails, continue with remaining models (degrade gracefully)
+   - If consensus fails (0 or 1 models succeeded), write partial ARF with [context.warning]
+   - If ARF write fails, log error but continue (don't abort entire run)
+   - Collect all errors and display summary at end
+
+13. Write integration test:
+   - Create test repo with sample code (lib.rs with error handling pattern)
+   - Add 2-3 commits with clear decisions (e.g., "Switch to anyhow for error handling")
+   - Mock LLM providers to return canned responses
+   - Run noggin learn
+   - Assert .noggin/patterns/error-handling.arf exists with correct content
+   - Assert .noggin/decisions/<hash>.arf exists with commit context
+   - Assert manifest.toml updated with file hashes and commit entries
+
+14. Add --verify flag implementation:
+   - Perform all analysis but don't write ARF files or update manifest
+   - Display what would be created/updated
+   - Show drift: files changed since last scan, new commits, invalidated patterns
+
+15. Add logging with env_logger:
+   - RUST_LOG=noggin=debug shows detailed progress
+   - RUST_LOG=noggin=info shows high-level steps (default)
+   - Log LLM prompts and responses at debug level
+"""
+
+backup = """
+If multi-model parallel invocation is too complex or unreliable:
+1. Use single-model analysis (Claude only via codex.nix)
+2. Skip consensus synthesis, directly use Claude's output
+3. Defer git history analysis to later step, focus on current state only
+4. Simplify ARF generation to just patterns and facts (skip decisions/bugs)
+5. Use synchronous file scanning instead of parallel (simpler but slower)
+
+If LLM invocation via nix-shell is flaky:
+1. Add retry logic with exponential backoff (already planned)
+2. Cache LLM responses in temp directory to avoid re-analysis on failure
+3. Add --resume flag to continue from last successful step
+
+If git2-rs is too complex:
+1. Use std::process::Command to invoke 'git log --format=...' directly
+2. Parse git log output with regex instead of using git2 API
+3. Accept less structured commit data (just hash and message, no diff analysis)
+"""
+
+[context]
+files = [
+  "src/commands/learn.rs",
+  "src/learn/mod.rs",
+  "src/learn/scanner.rs",
+  "src/learn/history.rs",
+  "src/learn/llm.rs",
+  "src/learn/prompts.rs",
+  "src/learn/synthesis.rs",
+  "src/learn/writer.rs",
+  "Cargo.toml",
+  ".noggin/manifest.toml",
+  "README.md"
+]
+dependencies = [
+  "walkdir",
+  "git2",
+  "sha2",
+  "tokio",
+  "indicatif",
+  "env_logger",
+  "serde_json",
+  "tempfile"
+]

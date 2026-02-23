@@ -1,0 +1,62 @@
+order = 15
+what = "Invalidate ARF files when their referenced source files change"
+why = "When a file's hash changes in manifest.toml, any ARF files that reference that file may contain outdated information (patterns, decisions, facts). Mark those ARF files for re-analysis so the next `noggin learn` run regenerates them with current information."
+how = """
+Step-by-step implementation plan:
+
+1. Add `invalidated` boolean field to ARF file tracking in manifest.toml
+   - Update manifest schema to track invalidation state per ARF file
+   - Example: `[arf_files."patterns/error-handling.arf"]` gets `invalidated = true`
+
+2. Create `InvalidationService` in `src/invalidation.rs`
+   - Method: `invalidate_affected_arfs(manifest: &mut Manifest, changed_files: Vec<PathBuf>)`
+   - For each changed file, scan all ARF files to find which ones reference it
+   - Mark those ARF files as invalidated in the manifest
+
+3. Parse ARF files to extract file references
+   - Read `context.files` array from each ARF file
+   - Read `context.commits` if present (may reference files via commit diffs)
+   - Build reverse index: `HashMap<PathBuf, Vec<ArfPath>>` (file -> ARF files that reference it)
+
+4. Integrate invalidation into change detection
+   - In `noggin learn`, after detecting changed files via hash comparison
+   - Call `InvalidationService::invalidate_affected_arfs()`
+   - Log which ARF files were marked for re-analysis
+
+5. Filter invalidated ARF files during learning
+   - When running multi-model analysis, include invalidated ARF files in re-analysis queue
+   - Regenerate ARF content for invalidated files
+   - Clear `invalidated = false` flag after successful regeneration
+
+6. Handle cascading invalidation
+   - If ARF file A references ARF file B, and B is regenerated, mark A as invalidated
+   - Prevents stale cross-references between ARF files
+
+7. Add `noggin status --invalidated` flag
+   - Show list of ARF files marked for re-analysis
+   - Display which source files triggered each invalidation
+
+8. Test with file modification scenario
+   - Modify `src/main.rs`, run `noggin learn`
+   - Verify ARF files referencing main.rs are marked invalidated
+   - Verify those ARF files are regenerated on next run
+   - Verify manifest shows `invalidated = false` after regeneration
+
+9. Add `noggin invalidate --file <path>` manual trigger
+   - Allow users to manually mark ARF files for re-analysis
+   - Useful when ARF content is wrong but file hash hasn't changed
+
+10. Handle ARF file deletion
+    - If invalidated ARF is deleted manually, remove from manifest
+    - Don't error if invalidated file is missing during re-analysis
+"""
+backup = "If reverse indexing all ARF files is too slow, store file->ARF mapping directly in manifest.toml as `[file_to_arf_index]` section. Update this index whenever ARF files are created/modified. Trade off: more manifest complexity, but O(1) lookup instead of O(N) ARF parsing."
+
+[context]
+files = [
+  "src/manifest.rs",
+  "src/learning/mod.rs",
+  "src/invalidation.rs",
+  ".noggin/manifest.toml"
+]
+dependencies = ["toml crate for ARF parsing", "walkdir for ARF file traversal"]

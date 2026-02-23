@@ -1,0 +1,68 @@
+order = 19
+what = "Implement 'noggin ask' command that searches ARF knowledge using ripgrep"
+why = "Enable fast querying of learned codebase knowledge without loading all ARF files into memory. Ripgrep provides fast regex search across .noggin/ directory with proper ranking and context extraction."
+
+how = """
+Step-by-step implementation plan:
+
+1. Add 'ask' subcommand to CLI (src/main.rs)
+   - Parse query string argument
+   - Optional flags: --context-lines (default 3), --max-results (default 10), --category filter
+
+2. Create src/query.rs module
+   - Implement QueryEngine struct with new(noggin_dir: PathBuf)
+   - Implement search(query: &str, opts: QueryOptions) -> Vec<QueryResult>
+   - QueryOptions: context_lines, max_results, category_filter
+   - QueryResult: file_path, line_number, matched_text, context_before, context_after, arf_metadata
+
+3. Implement ripgrep execution
+   - Use std::process::Command to invoke 'rg' binary
+   - Args: --json flag for structured output, -C flag for context lines
+   - Search pattern: query string (literal or regex based on flag)
+   - Search path: .noggin/ directory
+   - Include only *.arf files with glob filter
+   - Parse JSON output into SearchMatch structs
+
+4. Parse ARF files for matched results
+   - For each rg match, read the full ARF file using std::fs::read_to_string
+   - Parse TOML frontmatter to extract what/why/how/when fields
+   - Extract [context] section for commit links, file paths, timestamps
+   - Combine matched line + ARF metadata into QueryResult
+
+5. Implement result ranking
+   - Score results by: match location (what > why > how), file category (decisions > patterns), recency
+   - Sort by score descending
+   - Limit to max_results
+
+6. Format output for terminal
+   - Group by category (decisions/, patterns/, bugs/, etc)
+   - Show: matched line, file path with line number, what/why summary
+   - Use colored output (green for file paths, yellow for matches, dim for context)
+   - Add '...' separator between results
+
+7. Add --json flag for machine-readable output
+   - Serialize QueryResult vec as JSON array
+   - Include all metadata for downstream processing (MCP server, other tools)
+
+8. Handle edge cases
+   - Check if ripgrep is installed (which rg), error with install instructions
+   - Handle empty .noggin/ directory (no knowledge learned yet)
+   - Handle no matches (suggest broader query or 'noggin learn')
+   - Handle malformed ARF files (skip and warn)
+
+9. Add integration test
+   - Create test .noggin/ directory with sample ARF files
+   - Run 'noggin ask' queries and verify results
+   - Test category filtering, context lines, max results
+
+10. Update README with usage examples
+    - Basic query: noggin ask "authentication"
+    - Category filter: noggin ask "database" --category decisions
+    - JSON output: noggin ask "refactor" --json | jq
+"""
+
+backup = "If ripgrep is not available or fails, implement pure Rust search using walkdir crate to traverse .noggin/ and regex crate for pattern matching. Less performant but avoids external dependency. Load each .arf file, search content with regex, extract context manually by splitting on newlines and slicing around match index."
+
+[context]
+files = ["src/main.rs", "src/query.rs", "src/arf.rs", ".noggin/**/*.arf", "README.md"]
+dependencies = ["ripgrep (external binary)", "serde_json (for --json output)", "colored (for terminal formatting)"]

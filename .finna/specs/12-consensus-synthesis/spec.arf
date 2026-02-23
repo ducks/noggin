@@ -1,0 +1,134 @@
+order = 12
+what = "Reconcile multi-model outputs into unified ARF files with conflict resolution"
+why = "Multiple models analyzing the same codebase produce overlapping and sometimes conflicting insights. We need deterministic synthesis that preserves high-confidence insights, merges complementary perspectives, and resolves conflicts through majority voting or model-specific weighting."
+how = """
+Step-by-step implementation plan:
+
+1. Create synthesis module structure:
+   - Create `src/synthesis/mod.rs` for synthesis orchestration
+   - Create `src/synthesis/merger.rs` for ARF merging logic
+   - Create `src/synthesis/conflict.rs` for conflict detection and resolution
+   - Create `src/synthesis/vote.rs` for majority voting implementation
+   - Add `mod synthesis;` and `pub use synthesis::*;` to `src/lib.rs`
+
+2. Define synthesis data structures:
+   - Create `ModelOutput` struct: model_name, arf_files (Vec<ArfFile>), confidence scores
+   - Create `Conflict` enum: DifferentValues, DifferentStructure, MissingInSome
+   - Create `Resolution` enum: MajorityVote, HighestConfidence, Merge, KeepAll
+   - Create `SynthesisResult` struct: unified_arfs, conflicts_resolved, conflicts_remaining
+
+3. Implement ARF file grouping:
+   - Group ARF files by category (decisions/, patterns/, bugs/, migrations/, facts/)
+   - Within each category, group by semantic similarity (compare 'what' fields)
+   - Use fuzzy matching for file names (Levenshtein distance < 3)
+   - Create `group_by_category()` and `group_by_similarity()` functions
+
+4. Implement field-level merging:
+   - For 'what' field: pick shortest, clearest version (prefer if multiple models agree)
+   - For 'why' field: concatenate unique perspectives, deduplicate
+   - For 'how' field: merge step lists, preserve all unique steps, order chronologically
+   - For context.files: union of all file paths mentioned
+   - For context.dependencies: union of all dependencies
+   - Create `merge_arf_fields()` function
+
+5. Implement conflict detection:
+   - Detect contradictory 'what' statements (semantic analysis via edit distance)
+   - Detect incompatible 'how' steps (check for mutual exclusivity)
+   - Detect missing sections (some models include 'outcome', others don't)
+   - Create `detect_conflicts()` returning Vec<Conflict>
+
+6. Implement majority voting:
+   - Count model agreement for each field value
+   - Threshold: 2+ models agree → accept, 1 model only → flag for review
+   - Weight by model confidence if available (Codex 1.0x, Claude 1.2x, Gemini 1.1x)
+   - Create `vote_on_field()` returning (winning_value, vote_count)
+
+7. Implement conflict resolution strategies:
+   - Strategy 1 (MajorityVote): Use value with most model agreement
+   - Strategy 2 (HighestConfidence): Use value from most confident model
+   - Strategy 3 (Merge): Combine all non-contradictory values
+   - Strategy 4 (KeepAll): Create separate ARF files for each perspective
+   - Create `resolve_conflict()` dispatching to strategies
+
+8. Build synthesis pipeline:
+   - Input: Vec<(model_name, Vec<ArfFile>)> from learn phase
+   - Step 1: Group ARF files by category and similarity
+   - Step 2: Merge fields within each group
+   - Step 3: Detect conflicts in merged results
+   - Step 4: Resolve conflicts using voting/strategies
+   - Step 5: Write unified ARF files to `.noggin/`
+   - Create `synthesize()` orchestrating full pipeline
+
+9. Add manifest integration:
+   - Update manifest.toml with synthesis metadata:
+     [synthesis]
+     last_run = "2026-02-23T15:30:00Z"
+     models_used = ["claude", "codex", "gemini"]
+     conflicts_resolved = 12
+     conflicts_manual = 2
+   - Track which models contributed to each ARF file
+   - Create `update_synthesis_manifest()` function
+
+10. Implement deterministic output:
+    - Sort all Vec fields alphabetically (files, dependencies, steps)
+    - Normalize whitespace in all text fields
+    - Use consistent TOML formatting (toml-rs with default serialization)
+    - Ensure same inputs → same outputs (no timestamps in ARF content)
+
+11. Add conflict reporting:
+    - Generate `synthesis-report.txt` listing:
+      - Total ARF files synthesized
+      - Conflicts detected and how resolved
+      - Model agreement statistics (% consensus)
+      - Manual review needed (unresolvable conflicts)
+    - Create `generate_synthesis_report()` function
+
+12. Write unit tests:
+    - Test ARF grouping with similar/dissimilar files
+    - Test field merging with overlapping/unique values
+    - Test conflict detection with contradictory inputs
+    - Test majority voting with 2/3 agreement, 3/3 agreement, 1/3 outlier
+    - Test full synthesis with 3 model outputs
+    - Add tests to `tests/synthesis_tests.rs`
+
+13. Add CLI integration:
+    - `noggin learn` automatically runs synthesis after multi-model analysis
+    - `noggin synthesize` runs synthesis independently (re-process existing outputs)
+    - `--no-synthesize` flag to skip synthesis (keep raw model outputs)
+    - Show synthesis progress: "Synthesizing 47 ARF files from 3 models..."
+"""
+
+backup = """
+If majority voting produces too many conflicts or low confidence:
+1. Fallback to model-specific namespacing: write separate `.noggin/claude/`, `.noggin/codex/`, `.noggin/gemini/` directories
+2. Query interface can search across all namespaces and present multiple perspectives
+3. User manually resolves conflicts by editing ARF files directly
+4. Future synthesis runs can detect manual edits (compare hashes) and preserve them
+
+If semantic similarity matching is too slow or inaccurate:
+1. Use exact filename matching only (require models to agree on filenames)
+2. Provide naming conventions in analysis prompts (e.g., "decisions/auth-refactor.arf")
+3. Post-synthesis, user can manually merge files with `noggin merge <file1> <file2>`
+
+If model outputs are too divergent to reconcile:
+1. Keep highest-confidence model output only (e.g., always prefer Claude for architecture)
+2. Use model specialization: Claude for decisions, Codex for patterns, Gemini for dependencies
+3. Skip synthesis, rely on query interface to search across raw model outputs
+"""
+
+[context]
+files = [
+  "src/synthesis/mod.rs",
+  "src/synthesis/merger.rs",
+  "src/synthesis/conflict.rs",
+  "src/synthesis/vote.rs",
+  "src/arf.rs",
+  "src/manifest.rs",
+  "tests/synthesis_tests.rs"
+]
+dependencies = [
+  "edit-distance crate for fuzzy string matching",
+  "serde for ARF deserialization/serialization",
+  "toml crate for consistent formatting",
+  "chrono for synthesis timestamp"
+]

@@ -1,0 +1,100 @@
+order = 6
+what = "Walk repository commits chronologically using git2-rs and extract metadata for knowledge extraction"
+why = "Git history contains architectural decisions, bug fixes, and evolution context that complement static code analysis. Walking chronologically allows incremental processing by tracking last-analyzed commit in manifest."
+
+how = """
+1. Add git2-rs dependency to Cargo.toml (git2 = "0.19")
+
+2. Create src/git/walker.rs module with CommitMetadata struct:
+   - hash: String (full SHA)
+   - short_hash: String (7 chars)
+   - author: String (name + email)
+   - timestamp: i64 (Unix timestamp)
+   - message: String (full commit message)
+   - message_summary: String (first line only)
+   - files_changed: u32
+   - insertions: u32
+   - deletions: u32
+   - parent_hashes: Vec<String> (for merge commits)
+
+3. Implement walk_commits() function:
+   - Open repository with Repository::open(path)
+   - Get HEAD reference and resolve to commit
+   - Create revwalk with repo.revwalk()
+   - Push HEAD and set sort mode to TOPOLOGICAL | REVERSE (chronological order)
+   - Iterate commits and extract metadata for each
+
+4. For each commit, extract diff statistics:
+   - Get commit object from OID
+   - Get parent commit (if not initial commit)
+   - Create diff between parent tree and current tree using repo.diff_tree_to_tree()
+   - Call diff.stats() to get DiffStats
+   - Extract files_changed(), insertions(), deletions()
+
+5. Add filtering support to skip merge commits or specific paths:
+   - Check commit.parent_count() > 1 for merges
+   - Use DiffOptions with pathspec to filter by directory
+   - Add skip_merges: bool parameter
+
+6. Implement incremental traversal via manifest integration:
+   - Read manifest.toml [commits] section for last_processed hash
+   - If exists, push last_processed to revwalk with REVERSE flag
+   - Only process commits newer than last_processed
+   - Return Vec<CommitMetadata> for unprocessed commits
+
+7. Add pagination support for large histories:
+   - Add limit parameter to walk_commits()
+   - Break iteration after N commits
+   - Return tuple (Vec<CommitMetadata>, Option<String>) where String is next starting hash
+
+8. Create tests in tests/git_walker_test.rs:
+   - Initialize test repo with git2::Repository::init()
+   - Create test commits with known metadata
+   - Verify chronological order (oldest first)
+   - Verify diff stats match expected values
+   - Test incremental walk starting from middle commit
+   - Test merge commit handling
+
+9. Add error handling for common cases:
+   - Repository not found (return clear error)
+   - Detached HEAD state (fall back to refs/heads/main)
+   - Empty repository (return empty Vec)
+   - Corrupted commits (log warning, skip and continue)
+
+10. Add CLI command 'noggin git-walk' for debugging:
+    - Print commits in chronological order with metadata
+    - Support --since=<hash> for incremental testing
+    - Support --limit=N for pagination testing
+    - Output as JSON for validation
+
+11. Integrate with manifest.toml structure:
+    - Add [commits] section with commit_hash = { processed = "YYYY-MM-DD", category = "decision|bug|refactor|feature" }
+    - Category will be determined by LLM analysis in later steps
+    - This step only extracts metadata, categorization comes later
+
+12. Performance optimization for large repos:
+    - Use revwalk threading if available
+    - Cache tree objects to avoid redundant lookups
+    - Consider skipping diff stats for commits older than retention period
+"""
+
+backup = """
+If git2-rs proves difficult (lifetime issues, API complexity), fall back to shelling out to git CLI:
+- Run 'git log --reverse --pretty=format:%H|%h|%an|%ae|%at|%s|%b' for metadata
+- Run 'git diff-tree --numstat <hash>' for diff statistics
+- Parse output with regex and build CommitMetadata structs
+- Less type-safe but simpler to implement
+- Trade-off: slower (process spawning) but easier to debug
+"""
+
+[context]
+files = [
+  "src/git/walker.rs",
+  "tests/git_walker_test.rs", 
+  "src/manifest.rs",
+  "Cargo.toml"
+]
+dependencies = [
+  "git2 = \"0.19\"",
+  "chrono (for timestamp conversion if needed)"
+]

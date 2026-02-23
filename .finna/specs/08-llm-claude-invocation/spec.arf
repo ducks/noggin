@@ -1,0 +1,89 @@
+order = 8
+what = "Invoke Claude CLI as child process with JSON output parsing and error handling"
+why = "Noggin needs to execute Claude (and other LLMs) as subprocesses during multi-model analysis, capturing structured JSON responses while handling timeouts, errors, and rate limits gracefully"
+
+how = """
+Step-by-step implementation plan:
+
+1. Create src/llm/claude.rs module
+   - Define ClaudeClient struct with timeout and retry config
+   - Define ClaudeError enum (ProcessError, ParseError, Timeout, RateLimited, ApiError)
+   - Define ClaudeResponse struct matching CLI JSON output format
+
+2. Implement subprocess invocation
+   - Use tokio::process::Command for async execution
+   - Build command: ["claude", "exec", "--json", "-s", "read-only", prompt]
+   - Capture stdout/stderr separately
+   - Set timeout using tokio::time::timeout (default 30s, configurable)
+   - Return ClaudeError::Timeout if exceeded
+
+3. Parse JSON output
+   - Read stdout as string
+   - Use serde_json::from_str to deserialize
+   - Expected format: {"agent_message": "response text", "status": "success"}
+   - Handle partial JSON (buffer until complete object received)
+   - Return ClaudeError::ParseError with context on failure
+
+4. Error handling
+   - Check process exit code (non-zero = error)
+   - Parse stderr for rate limit indicators ("429", "rate limit", "quota exceeded")
+   - Return ClaudeError::RateLimited with retry-after if detected
+   - Capture and log stderr for debugging
+   - Distinguish between API errors (4xx/5xx) and process errors
+
+5. Retry logic with exponential backoff
+   - Wrap invocation in retry loop (max 3 attempts)
+   - Use tokio::time::sleep for delays
+   - Backoff: 1s, 2s, 4s
+   - Only retry on transient errors (timeout, rate limit, 5xx)
+   - Don't retry on auth failures or invalid input
+
+6. Add tests
+   - Mock claude CLI with test fixtures
+   - Test successful invocation and parsing
+   - Test timeout handling (sleep 60s in mock)
+   - Test rate limit detection and retry
+   - Test malformed JSON handling
+   - Test process crash scenarios
+
+7. Integration with existing LLM trait
+   - Implement LLMProvider trait from src/llm/mod.rs
+   - Method: async fn query(&self, prompt: &str) -> Result<String, LLMError>
+   - Extract agent_message from ClaudeResponse
+   - Map ClaudeError to generic LLMError
+
+8. Add configuration
+   - Read from ~/.noggin/config.toml
+   - [llm.claude] section with timeout_secs, max_retries
+   - Default to sane values if missing
+   - Allow override via CLI flags (--claude-timeout)
+
+9. Logging and observability
+   - Log command invocation with sanitized prompt preview
+   - Log response time and token usage if available
+   - Log retry attempts with reason
+   - Use tracing crate for structured logs
+
+10. Documentation
+    - Add doc comments explaining JSON format
+    - Document error variants and retry behavior
+    - Example usage in module-level docs
+    - Note: requires 'claude' CLI installed and configured
+"""
+
+backup = "If Claude CLI JSON parsing proves unreliable, fall back to scraping plain text output by invoking without --json flag and using regex to extract response between markers. If subprocess approach has too much overhead, consider using claude-rs SDK crate directly (though this requires API key management vs relying on CLI's auth)."
+
+[context]
+files = [
+    "src/llm/mod.rs",
+    "src/llm/claude.rs",
+    "src/config.rs",
+    "Cargo.toml"
+]
+dependencies = [
+    "tokio (process, time)",
+    "serde_json",
+    "serde (Deserialize)",
+    "tracing",
+    "claude CLI (external, must be installed)"
+]

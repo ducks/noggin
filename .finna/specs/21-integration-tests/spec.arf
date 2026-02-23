@@ -1,0 +1,93 @@
+order = 21
+what = "Create test fixtures and integration tests for full learn/query cycle"
+why = "Validate that noggin can learn from a real git repository, generate stable ARF files, handle incremental updates correctly, and answer queries based on learned knowledge. Integration tests catch issues that unit tests miss (git operations, file I/O, multi-model coordination, manifest tracking)."
+how = """
+Step-by-step implementation plan:
+1. Create tests/fixtures/ directory structure with two sample repositories
+2. Build fixture repo #1 (simple-app): 5 commits showing feature evolution
+   - Commit 1: Initial Rust app with main.rs (basic CLI)
+   - Commit 2: Add error handling pattern (Result<T, E> wrapper)
+   - Commit 3: Refactor to use clap for CLI parsing (architectural decision)
+   - Commit 4: Add logging with env_logger (dependency addition)
+   - Commit 5: Fix off-by-one bug in parsing (bug fix with lesson)
+   - Include meaningful commit messages explaining why (not just what)
+3. Build fixture repo #2 (multi-lang): Complex repo with multiple languages/patterns
+   - Rust backend with axum web framework
+   - JavaScript frontend with React patterns
+   - Database migration history (shows evolution)
+   - 10+ commits demonstrating refactors, migrations, decisions
+4. Create tests/integration_test.rs with test scenarios
+5. Test scenario #1: Fresh learn on simple-app
+   - Run noggin init, verify .noggin/ created
+   - Run noggin learn, verify ARF files generated in correct categories
+   - Verify manifest.toml tracks all files and commits
+   - Assert stable output (run learn twice, compare ARF file hashes)
+6. Test scenario #2: Incremental learn after new commit
+   - Add commit #6 to simple-app (new feature)
+   - Run noggin learn again
+   - Verify only new commit processed (check manifest.toml updated_at)
+   - Verify new ARF file created, old ones unchanged (hash comparison)
+7. Test scenario #3: Incremental learn after file modification
+   - Modify main.rs without committing
+   - Run noggin learn
+   - Verify only affected patterns re-analyzed
+   - Verify manifest shows updated file hash
+8. Test scenario #4: Query interface
+   - Run noggin ask "What error handling pattern do we use?"
+   - Verify response references commit #2 and Result<T, E> pattern
+   - Run noggin ask "Why did we choose clap?"
+   - Verify response pulls from architectural decision ARF (commit #3)
+9. Test scenario #5: Multi-language repository
+   - Run noggin learn on multi-lang fixture
+   - Verify correct categorization (backend patterns vs frontend patterns)
+   - Verify dependencies tracked separately per language
+   - Query "What web framework do we use?" should return axum
+10. Test scenario #6: Manifest drift detection
+    - Manually edit an ARF file
+    - Run noggin learn --verify
+    - Assert error/warning about drift detected
+11. Test scenario #7: Pattern invalidation
+    - Modify file that contributed to existing pattern ARF
+    - Run noggin learn
+    - Verify pattern ARF regenerated (not just appended)
+    - Verify manifest tracks pattern dependencies on files
+12. Create helper functions for test setup
+    - init_fixture_repo(name: &str) -> TempDir - copies fixture to temp dir
+    - run_noggin_command(args: &[&str]) -> Output - runs CLI in test context
+    - assert_arf_file_exists(path: &Path, expected_fields: Vec<&str>)
+    - assert_manifest_has_file(manifest_path: &Path, file: &str)
+13. Add assertions for ARF quality
+    - Verify what/why/how fields are non-empty
+    - Verify context.commits array contains valid commit hashes
+    - Verify context.files array contains paths that exist in repo
+14. Test error handling paths
+    - Invalid git repository (not a repo)
+    - Corrupted manifest.toml
+    - Missing .noggin/ directory when running query
+    - Empty repository (no commits)
+15. Add performance benchmarks
+    - Time full learn on simple-app (should be <30s)
+    - Time incremental learn after 1 new commit (should be <5s)
+    - Time query lookup (should be <1s)
+16. Document how to run integration tests in tests/README.md
+17. Add CI workflow (.github/workflows/integration-test.yml) to run tests on push
+"""
+backup = "If git2-rs fixture creation is too complex, use shell commands (git init, git add, git commit) to build fixtures programmatically in test setup. If multi-model calls are flaky in tests, mock the LLM responses with pre-generated ARF content and test manifest tracking logic independently. If full integration tests are too slow for CI, split into fast unit tests (manifest, ARF parsing) and slower integration tests (run manually or nightly)."
+
+[context]
+files = [
+  "tests/integration_test.rs",
+  "tests/fixtures/simple-app/",
+  "tests/fixtures/multi-lang/",
+  "tests/README.md",
+  ".github/workflows/integration-test.yml",
+  "src/commands/learn.rs",
+  "src/commands/query.rs",
+  "src/manifest.rs"
+]
+dependencies = [
+  "tempfile (for TempDir test isolation)",
+  "assert_cmd (for CLI testing)",
+  "predicates (for output assertions)",
+  "git2 (programmatic git operations in tests)"
+]

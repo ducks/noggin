@@ -1,0 +1,84 @@
+order = 2
+what = "Define comprehensive error types for all noggin failure modes"
+why = "Rust projects need structured error handling from day one. Without clear error types, debugging multi-model analysis failures (LLM timeouts, git parsing issues, manifest corruption) becomes a nightmare. This step creates a solid error foundation before implementing any real functionality."
+
+how = """
+Step-by-step implementation plan:
+
+1. Create src/error.rs with main Error enum and Result type alias
+   - Add `pub type Result<T> = std::result::Result<T, Error>;` for convenience
+   - Define Error enum with variants for each failure category
+   - Derive Debug, Display traits
+
+2. Define ManifestError variant with subcategories
+   - FileNotFound (path not in manifest)
+   - InvalidHash (hash mismatch on rescan)
+   - CorruptedData (TOML parse failure)
+   - MissingRequiredField (manifest.toml schema violation)
+
+3. Define GitError variant with subcategories
+   - RepositoryNotFound (not a git repo)
+   - CommitNotFound (invalid commit hash)
+   - InvalidRef (bad branch/tag reference)
+   - GitCommandFailed (git2-rs operation error)
+
+4. Define LlmError variant with subcategories
+   - RequestFailed (HTTP error, network timeout)
+   - InvalidResponse (malformed JSON, missing fields)
+   - RateLimitExceeded (429 response, quota exhausted)
+   - AuthenticationFailed (API key invalid)
+   - ModelUnavailable (specific model offline)
+
+5. Define ArfError variant with subcategories
+   - ParseFailed (invalid TOML in .arf file)
+   - MissingSection (required what/why/how missing)
+   - InvalidStructure (wrong schema for ARF format)
+   - InvalidPath (ARF file path doesn't exist)
+
+6. Define IoError variant wrapping std::io::Error
+   - FileReadFailed (can't read file)
+   - FileWriteFailed (can't write file)
+   - DirectoryCreateFailed (mkdir failed)
+   - PermissionDenied (access denied)
+
+7. Implement std::fmt::Display for Error enum
+   - Match each variant and write human-readable error message
+   - Include context (file paths, commit hashes, model names)
+   - Keep messages clear and actionable
+
+8. Implement std::error::Error trait for Error enum
+   - Add source() method to chain underlying errors
+   - Enables error propagation with ? operator
+
+9. Add From implementations for common error conversions
+   - From<std::io::Error> for Error (wrap as IoError)
+   - From<toml::de::Error> for Error (wrap as ArfError or ManifestError)
+   - From<git2::Error> for Error (wrap as GitError)
+   - This allows ? operator to automatically convert errors
+
+10. Add helper methods for common error checks
+    - is_retryable() -> bool (rate limits, network errors)
+    - is_fatal() -> bool (corrupted manifest, missing git repo)
+    - context() -> String (formatted context for logging)
+
+11. Write unit tests in src/error.rs
+    - Test error display messages are clear
+    - Test error chaining with source()
+    - Test From conversions work correctly
+    - Test helper methods (is_retryable, is_fatal)
+
+12. Update Cargo.toml dependencies
+    - Ensure thiserror or anyhow if using derive macros (optional)
+    - Or stick with manual Display/Error impl (more explicit)
+
+13. Document error types with rustdoc comments
+    - Explain when each error variant occurs
+    - Provide examples of handling specific errors
+    - Note which errors are retryable vs fatal
+"""
+
+backup = "If comprehensive error enum becomes unwieldy, use thiserror crate for derived implementations. If error chaining gets complex, consider anyhow for simpler error propagation in CLI context (not library). For truly simple approach, use Box<dyn std::error::Error> everywhere and skip custom types (but loses type safety and matching)."
+
+[context]
+files = ["src/error.rs", "Cargo.toml", "src/lib.rs"]
+dependencies = ["std::error::Error", "std::fmt::Display", "optional: thiserror crate", "optional: git2 (for From<git2::Error>)", "optional: toml (for From<toml::de::Error>)"]

@@ -1,0 +1,30 @@
+order = 1
+what = "Initialize Rust project with CLI parsing, async runtime, serialization, git access, and error handling"
+why = "Foundation for noggin CLI tool that will analyze codebases incrementally. Needs clap for commands (init/learn/ask/serve/status), tokio for parallel model queries, serde+toml for ARF format, git2 for commit history analysis, and anyhow for error propagation."
+
+how = """
+Step-by-step implementation plan:
+1. Run `cargo init --name noggin` in ~/dev/noggin directory
+2. Add dependencies to Cargo.toml with specific versions:
+   - clap = { version = "4.5", features = ["derive"] }
+   - tokio = { version = "1.42", features = ["full"] }
+   - serde = { version = "1.0", features = ["derive"] }
+   - toml = "0.8"
+   - git2 = "0.19"
+   - anyhow = "1.0"
+3. Create src/main.rs with basic clap CLI structure using derive macros
+4. Define subcommands enum: Init, Learn, Ask, Serve, Status
+5. Add stub match arms for each subcommand that print "Not implemented"
+6. Test compilation with `cargo build`
+7. Test CLI help output with `cargo run -- --help`
+8. Verify each subcommand is recognized: `cargo run -- init --help`
+9. Add project metadata to Cargo.toml: description, license (MIT), repository URL, keywords
+10. Create .gitignore with /target/, Cargo.lock (for binary project)
+11. Initial commit with working skeleton CLI
+"""
+
+backup = "If git2 has compilation issues on NixOS, use libgit2-sys with system-libgit2 feature and add libgit2 to shell.nix buildInputs. If tokio adds too much compile time for MVP, start with single-threaded and add async later when implementing parallel model queries."
+
+[context]
+files = ["~/dev/noggin/Cargo.toml", "~/dev/noggin/src/main.rs", "~/dev/noggin/.gitignore"]
+dependencies = ["clap 4.5", "tokio 1.42", "serde 1.0", "toml 0.8", "git2 0.19", "anyhow 1.0"]
