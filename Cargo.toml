@@ -1,11 +1,15 @@
 [package]
-name = "noggin"
+name = "llm-noggin"
 version = "0.1.0"
 edition = "2021"
 description = "Multi-model codebase knowledge extraction and querying tool"
 license = "MIT"
 repository = "https://github.com/ducks/noggin"
 keywords = ["codebase", "knowledge", "llm", "git", "analysis"]
+
+[[bin]]
+name = "noggin"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
