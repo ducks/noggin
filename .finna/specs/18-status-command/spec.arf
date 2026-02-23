@@ -1,0 +1,106 @@
+order = 18
+what = "Implement 'noggin status' command to show scan state, pending files, and unprocessed commits"
+why = "Users need visibility into what noggin has learned, what's pending analysis, and whether the knowledge base is up-to-date with the current codebase state. This is the primary diagnostic command for understanding noggin's internal state."
+
+how = """
+Step-by-step implementation plan:
+
+1. Create src/commands/status.rs module with StatusCommand struct
+   - Add to src/commands/mod.rs exports
+   - Implement async execute() method that loads manifest and git repo
+
+2. Load and parse .noggin/manifest.toml
+   - Use existing Manifest struct from src/manifest.rs
+   - Handle case where .noggin/ doesn't exist (show "Not initialized" message)
+   - Handle corrupted manifest gracefully
+
+3. Collect current codebase state
+   - Walk working directory to find all source files (exclude .git, .noggin, node_modules, target)
+   - Hash each file with SHA-256
+   - Compare against manifest.files to identify: unchanged, modified, new files
+
+4. Collect git commit state
+   - Use git2-rs to walk commit history from HEAD
+   - Compare commit SHAs against manifest.commits
+   - Identify unprocessed commits (commits not in manifest)
+   - Count processed commits
+
+5. Calculate statistics
+   - Total files: scanned vs unscanned
+   - Modified files: files where hash doesn't match manifest
+   - New files: files not in manifest at all
+   - Unprocessed commits: commits not yet analyzed
+   - ARF files generated: count .arf files in .noggin/
+
+6. Display status output in clear sections
+   - Header: "Noggin Status for <repo_path>"
+   - Files section: "X scanned, Y modified, Z new, W total"
+   - Commits section: "X processed, Y unprocessed (since <last_commit_sha>)"
+   - Knowledge section: "X ARF files generated (patterns: N, decisions: N, bugs: N, etc.)"
+   - Freshness indicator: "✓ Up to date" or "⚠ Run 'noggin learn' to process changes"
+
+7. Add color coding using termcolor or colored crate
+   - Green for up-to-date state
+   - Yellow for pending changes
+   - Red for errors or uninitialized
+   - Dim/gray for counts and metadata
+
+8. Add --verbose flag for detailed file listing
+   - Show each modified file with old/new hash
+   - Show each unprocessed commit with SHA and message
+   - Show each new file discovered
+
+9. Add --json flag for machine-readable output
+   - Output JSON with same structure as human-readable display
+   - Useful for integrations and scripting
+
+10. Wire up to main CLI in src/main.rs
+    - Add 'status' subcommand to clap Command
+    - Route to StatusCommand::execute()
+
+11. Test status command behavior
+    - Test uninitialized repo (no .noggin/)
+    - Test fully synced repo (no pending changes)
+    - Test repo with modified files
+    - Test repo with new commits
+    - Test repo with both file and commit changes
+    - Test --verbose and --json flags
+
+12. Add status output examples to README
+    - Show example output for clean repo
+    - Show example output for repo needing 'noggin learn'
+"""
+
+backup = """
+If git2-rs is difficult to integrate:
+1. Shell out to 'git log --format=%H' and parse commit SHAs
+2. Use 'git hash-object' to verify file hashes match git's internal hashing
+3. Fall back to listing .noggin/ directory contents for ARF counts instead of parsing TOMLs
+
+If performance is poor scanning large repos:
+1. Add caching of file scan results with mtime checks
+2. Use rayon for parallel file hashing
+3. Only scan files changed since last 'noggin learn' by checking git diff
+4. Add --quick flag that skips full directory walk and only checks git status
+
+If manifest.toml structure is insufficient:
+1. Add manifest.last_scan_timestamp to track when learn was last run
+2. Add manifest.repo_root to validate status is run in same directory
+3. Add manifest.version for forward compatibility
+"""
+
+[context]
+files = [
+    "src/commands/status.rs",
+    "src/commands/mod.rs",
+    "src/manifest.rs",
+    "src/main.rs",
+    ".noggin/manifest.toml"
+]
+dependencies = [
+    "git2 = '0.18'",
+    "sha2 = '0.10'",
+    "colored = '2.0'",
+    "serde_json = '1.0'",
+    "walkdir = '2.4'"
+]

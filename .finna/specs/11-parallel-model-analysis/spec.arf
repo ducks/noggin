@@ -1,0 +1,29 @@
+order = 11
+what = "Spawn Claude/Codex/Gemini concurrently with tokio, collect outputs, handle partial failures"
+why = "Multi-model consensus improves knowledge extraction quality. Running models in parallel reduces latency from ~30s sequential to ~10s concurrent. Need graceful degradation when models fail (API limits, network issues) so partial results are still useful."
+how = """
+Step-by-step implementation plan:
+
+1. Create `src/models/mod.rs` module with ModelProvider enum (Claude, Codex, Gemini) and ModelConfig struct (api_key, model_id, timeout)
+
+2. Create `src/models/client.rs` with async trait ModelClient:
+   - async fn analyze(&self, prompt: &str) -> Result<String, ModelError>
+   - Implement for ClaudeClient, CodexClient, GeminiClient
+   - Use reqwest for HTTP calls with tokio runtime
+   - Include timeout handling (default 60s per model)
+   - Parse JSON responses, extract content field
+
+3. Create `src/analysis/parallel.rs` with ParallelAnalyzer struct:
+   - Field: clients: Vec<Box<dyn ModelClient>>
+   - Method: async fn analyze_parallel(&self, prompt: &str) -> AnalysisResults
+   - Use tokio::spawn for each model client
+   - Use tokio::time::timeout for per-model timeouts
+   - Collect results with futures::future::join_all
+   - Handle partial failures: return AnalysisResults { claude: Option<String>, codex: Option<String>, gemini: Option<String>, errors: Vec<ModelError> }
+
+4. Define error handling in `src/models/error.rs`:
+   - ModelError enum: Timeout, ApiError(status_code, message), NetworkError, ParseError
+   - Implement Display and Error trait
+   - Log errors with tracing::warn! but don't fail entire analysis
+
+5. Add model configuration to config.toml:

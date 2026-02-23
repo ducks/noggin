@@ -1,0 +1,51 @@
+order = 14
+what = "Track processed commit SHAs in manifest to skip already-analyzed commits"
+why = "Incremental learning requires tracking which commits have been processed so subsequent runs only analyze new commits, reducing cost and time by avoiding re-analysis of unchanged history"
+how = """
+Step-by-step implementation plan:
+1. Extend manifest.toml schema to include [commits] section with SHA → metadata mapping
+   - Fields: processed_at (ISO8601 timestamp), category (decision|migration|bug|pattern), arf_files (array of generated ARF paths)
+   - Example: "abc123def" = { processed_at = "2026-02-23T12:00:00Z", category = "decision", arf_files = ["decisions/auth-refactor.arf"] }
+
+2. Add CommitManifest struct to src/manifest.rs alongside existing FileManifest
+   - Fields: sha (String), processed_at (String), category (Option<String>), arf_files (Vec<String>)
+   - Implement Serialize/Deserialize for TOML roundtrip
+   - Add commits: HashMap<String, CommitManifest> to Manifest struct
+
+3. Implement commit filtering in git history walker (src/git.rs or src/learn.rs)
+   - After loading manifest via Manifest::load(), extract processed_commits HashSet from manifest.commits keys
+   - When walking commits with git2-rs RevWalk, filter out SHAs present in processed_commits
+   - Return only unprocessed commits for analysis
+   - Log skipped commit count: "Skipped 47 already-processed commits, analyzing 3 new commits"
+
+4. Update commit processing to record processed commits in manifest
+   - After generating ARF files for a commit, add entry to manifest.commits
+   - Set processed_at = Utc::now().to_rfc3339(), category from LLM analysis result, arf_files from generation output
+   - Call manifest.save() to persist after each commit (or batch every N commits for performance)
+
+5. Add --force-reprocess flag to noggin learn command
+   - When flag present, skip manifest commit filtering and analyze all commits
+   - Useful for debugging or when ARF schema changes require regeneration
+   - Update manifest entries with new processed_at timestamps
+
+6. Write unit tests in tests/manifest_commit_tracking.rs
+   - Test commit filtering: manifest with 3 processed commits, git history with 5 commits → returns 2 unprocessed
+   - Test manifest persistence: process commit → check [commits] section in manifest.toml has correct SHA and metadata
+   - Test --force-reprocess: manifest with processed commits + force flag → all commits returned for analysis
+   - Test manifest upgrade path: existing manifest without [commits] section → initializes empty HashMap
+
+7. Update noggin status command to show commit processing stats
+   - Total commits in repo vs processed commits in manifest
+   - Last processed commit SHA and timestamp
+   - Example output: "Commits: 152 processed / 200 total (76%), last processed: abc123d at 2026-02-23 12:00"
+
+8. Document commit tracking in README.md and architecture docs
+   - Explain manifest [commits] schema
+   - Show example of incremental commit analysis workflow
+   - Note that commit re-analysis can be triggered with --force-reprocess
+"""
+backup = "If git2-rs commit iteration performance becomes bottleneck with large histories, maintain bloom filter or rolling window (last N commits) in manifest instead of full SHA list to reduce memory usage and lookup time"
+
+[context]
+files = ["src/manifest.rs", "src/learn.rs", "src/git.rs", "tests/manifest_commit_tracking.rs", "README.md"]
+dependencies = ["git2 (already in Cargo.toml)", "chrono (for timestamps)", "serde (for TOML serialization)"]

@@ -1,0 +1,16 @@
+what = "Error handling pattern in controllers"
+why = "Consistent error responses across API endpoints"
+how = """Use rescue_from with custom error classes:
+1. Define error hierarchy (ApiError < StandardError)
+2. Add rescue_from in ApplicationController
+3. Return JSON with error code and message
+4. Log errors to Rails logger
+"""
+
+[context]
+files = ["app/controllers/application_controller.rb", "app/errors/api_error.rb"]
+commits = ["b2c3d4e"]
+
+[context.outcome]
+pattern_type = "error-handling"
+usage_count = "42 controllers"

@@ -1,0 +1,20 @@
+what = "Rails 7 to Rails 8 upgrade"
+why = "Security patches, performance improvements, new authentication system"
+how = """Multi-phase migration:
+1. Update Gemfile to Rails 8.0
+2. Run rails app:update to generate new configs
+3. Migrate from Devise to Rails 8 authentication
+4. Update all gems for Rails 8 compatibility
+5. Fix deprecation warnings
+6. Update tests for new behaviors
+"""
+
+[context]
+files = ["Gemfile", "config/application.rb", "app/models/user.rb"]
+commits = ["c3d4e5f", "d4e5f6g", "e5f6g7h"]
+dependencies = ["rails", "sprockets-rails"]
+
+[context.outcome]
+result = "success"
+duration = "3 weeks"
+issues_encountered = "Devise removal required custom auth, test suite needed updates"

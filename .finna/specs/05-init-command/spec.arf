@@ -1,0 +1,21 @@
+order = 5
+what = "Implement 'noggin init' command that creates .noggin/ directory structure with subdirectories and empty manifest.toml"
+why = "Users need a way to initialize a noggin knowledge base in their repository. This creates the foundation for all subsequent learning operations by establishing the directory structure (.noggin/decisions, migrations, bugs, patterns, facts) and manifest.toml that tracks which files and commits have been analyzed."
+how = """
+Step-by-step implementation plan:
+1. Create src/commands/init.rs module with init_command() function
+2. Add init subcommand to main.rs CLI enum and match statement
+3. Check if .noggin/ already exists - error if it does to prevent accidental overwrites
+4. Create .noggin/ directory using std::fs::create_dir()
+5. Create subdirectories: decisions/, migrations/, bugs/, patterns/, facts/ using create_dir_all()
+6. Generate empty manifest.toml with initial TOML structure ([files], [commits] tables)
+7. Write manifest.toml to .noggin/manifest.toml using std::fs::write()
+8. Print success message showing created directory structure
+9. Add .noggin/ to .gitignore if it doesn't already contain it (optional but helpful)
+10. Write unit test that creates temp dir, runs init, verifies all directories and manifest exist
+"""
+backup = "If std::fs operations fail due to permissions, fall back to using std::process::Command to shell out to 'mkdir -p' and 'touch' commands. If manifest.toml generation fails, create it with empty content and let users populate it manually. If .gitignore modification fails, just warn the user to add .noggin/ manually rather than blocking the init."
+
+[context]
+files = ["src/main.rs", "src/commands/init.rs", "Cargo.toml"]
+dependencies = ["std::fs for directory/file creation", "std::path::Path for path manipulation", "toml crate for generating manifest structure"]

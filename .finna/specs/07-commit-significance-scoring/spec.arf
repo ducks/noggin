@@ -1,0 +1,81 @@
+order = 7
+what = "Implement commit significance scoring based on diff size, file patterns, and message keywords"
+
+why = "Not all commits are equally important for understanding a codebase. Scoring lets us prioritize learning from architectural decisions, security fixes, and major refactors over typo fixes and whitespace changes. This enables efficient incremental processing by focusing analysis on high-signal commits."
+
+how = """
+Step-by-step implementation plan:
+
+1. Create src/git/scoring.rs module with CommitScore struct and score_commit() function
+   - CommitScore { significance: f32, category: ScoreCategory, factors: Vec<ScoreFactor> }
+   - ScoreCategory enum: Critical, High, Medium, Low, Trivial
+   - ScoreFactor enum to track why score was assigned (DiffSize, FilePattern, MessageKeyword)
+
+2. Implement diff size scoring (0.0-1.0 scale)
+   - Use git2::Diff::stats() to get insertions + deletions
+   - Scale: 1-10 lines = 0.1, 11-50 = 0.3, 51-200 = 0.5, 201-500 = 0.7, 500+ = 1.0
+   - Single-line changes to docs/comments get penalty multiplier (0.5x)
+
+3. Implement file pattern scoring with weighted patterns
+   - Critical (1.0): migrations/, schema/, core/, lib/fundamentals/, security/
+   - High (0.8): src/, app/models/, app/controllers/, config/
+   - Medium (0.5): tests/, specs/, docs/architecture/
+   - Low (0.3): docs/, README, examples/
+   - Trivial (0.1): .gitignore, whitespace-only, formatting
+   - Calculate max pattern score across all changed files
+
+4. Implement commit message keyword scoring with weighted keywords
+   - Critical (1.0): BREAKING CHANGE, security fix, CVE-, vulnerability
+   - High (0.8): refactor, architecture, migration, deprecate
+   - Medium (0.6): feature, enhancement, optimize, performance
+   - Low (0.4): fix, bug, update
+   - Trivial (0.2): typo, whitespace, formatting, docs
+   - Use case-insensitive regex matching on full commit message
+
+5. Combine scores with weighted average
+   - Final score = (diff_size * 0.3) + (file_pattern * 0.4) + (message_keyword * 0.3)
+   - Categorize: 0.8-1.0 = Critical, 0.6-0.79 = High, 0.4-0.59 = Medium, 0.2-0.39 = Low, 0.0-0.19 = Trivial
+
+6. Add commit scoring to manifest tracking
+   - Update CommitRecord in manifest.rs to include significance score and category
+   - Store factors list for debugging/tuning
+   - Add filter methods: iter_significant_commits(min_score), iter_by_category(category)
+
+7. Integrate with commit walking in git/walker.rs
+   - Score each commit during walk
+   - Allow filtering: only process commits above threshold (default 0.4)
+   - Log skipped commits with scores for transparency
+
+8. Add tuning configuration to config.toml
+   - [scoring] section with weight overrides
+   - [scoring.weights] for diff/pattern/message weights
+   - [scoring.patterns] and [scoring.keywords] for custom patterns/keywords
+   - Allow users to tune for their codebase
+
+9. Write tests in tests/git_scoring.rs
+   - Test each scoring component independently
+   - Test combined scoring with known examples
+   - Test edge cases: empty diff, no message, binary files
+   - Test that critical keywords override low diff size
+
+10. Add --score-threshold flag to learn command
+    - Default 0.4 (skip trivial and most low-significance commits)
+    - Allow 0.0 to process all commits
+    - Show stats: X commits scanned, Y above threshold, Z processed
+"""
+
+backup = "If weighted scoring proves too complex or hard to tune, fall back to simpler tiered approach with hard categories: must-process (migrations, BREAKING), should-process (refactor, core/), may-process (features, fixes), skip (docs, formatting). Use explicit pattern matching instead of weighted scoring. This is less flexible but easier to reason about and debug."
+
+[context]
+files = [
+  "src/git/scoring.rs",
+  "src/git/walker.rs", 
+  "src/manifest.rs",
+  "src/config.rs",
+  "tests/git_scoring.rs"
+]
+dependencies = [
+  "git2 - for Diff::stats() and commit metadata",
+  "regex - for message keyword matching",
+  "toml - for scoring configuration"
+]

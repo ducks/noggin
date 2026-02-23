@@ -1,0 +1,23 @@
+order = 9
+what = "Add Codex CLI child process invocation and JSON response parsing"
+why = "Enable noggin to delegate code analysis tasks to Codex (gpt-5.2-codex) for efficient pattern detection, N+1 query identification, and code convention analysis. Codex provides focused code-specific insights without the investigation loops of general-purpose models."
+how = """
+1. Add tokio process dependency to Cargo.toml for async child process management
+2. Create src/llm/codex.rs module with CodexClient struct
+3. Implement invoke() method that spawns 'codex exec --json -s read-only' with prompt argument
+4. Parse stderr for JSON output (codex writes to stderr, not stdout)
+5. Extract agent_message field from JSON response structure
+6. Add proper error handling for process spawn failures, non-zero exits, invalid JSON
+7. Add timeout handling (default 120s) to prevent hanging on slow responses
+8. Create CodexError enum for spawn/execution/parse/timeout errors
+9. Add unit test with mock JSON response parsing
+10. Add integration test that invokes real codex CLI if available (skip if not installed)
+11. Document expected JSON structure in module comments
+12. Add example usage in CLI help text showing how noggin delegates to Codex
+"""
+backup = "If tokio process adds too much complexity, use std::process::Command with blocking I/O and spawn on tokio::task::spawn_blocking. If JSON parsing is unreliable, fall back to regex extraction of agent_message field. If codex CLI is unavailable, return clear error with installation instructions rather than failing silently."
+
+[context]
+files = ["src/llm/mod.rs", "src/llm/codex.rs", "Cargo.toml", "tests/codex_integration_test.rs"]
+dependencies = ["tokio (process feature)", "serde_json", "codex CLI (external, user must install from nix-shell ~/discourse/nix-shells/codex.nix)"]
+commands = ["cargo add tokio --features process", "cargo test codex"]

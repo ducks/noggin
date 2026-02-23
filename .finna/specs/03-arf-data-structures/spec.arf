@@ -1,0 +1,55 @@
+order = 3
+what = "Implement ARF file parser and writer with TOML serialization"
+why = "ARF (Augmented Reasoning Format) provides a structured way to store codebase knowledge as human-readable TOML files with what/why/how/context sections. This format enables version control, manual editing, and efficient querying of learned knowledge."
+how = """
+Step-by-step implementation plan:
+
+1. Create src/arf.rs module with core data structures:
+   - ArfFile struct with what/why/how/context fields
+   - Context struct with files, commits, dependencies, outcome fields
+   - All fields should be String or Vec<String> or HashMap<String, String>
+   - Derive Serialize, Deserialize from serde
+
+2. Implement ArfFile::from_toml(path: &Path) -> Result<ArfFile>:
+   - Read file contents with std::fs::read_to_string
+   - Parse TOML with toml::from_str
+   - Return Err if file missing or malformed
+
+3. Implement ArfFile::to_toml(&self, path: &Path) -> Result<()>:
+   - Serialize struct with toml::to_string_pretty
+   - Write to file with std::fs::write
+   - Create parent directories if missing (std::fs::create_dir_all)
+
+4. Add validation method ArfFile::validate(&self) -> Result<()>:
+   - Check required fields are non-empty (what, why, how)
+   - Verify file paths in context.files exist relative to .noggin/
+   - Return descriptive errors for missing fields
+
+5. Add helper methods:
+   - ArfFile::new(what, why, how) -> Self (basic constructor)
+   - ArfFile::add_file(&mut self, path: String) (append to context.files)
+   - ArfFile::add_commit(&mut self, commit: String) (append to context.commits)
+
+6. Write unit tests in src/arf.rs:
+   - Test round-trip (struct -> TOML -> struct equality)
+   - Test validation (missing fields, invalid paths)
+   - Test error handling (malformed TOML, missing files)
+   - Use tempfile crate for file I/O tests
+
+7. Add example ARF files to tests/fixtures/:
+   - decision.arf (architectural choice)
+   - pattern.arf (code convention)
+   - migration.arf (framework upgrade)
+   - Use these in integration tests
+
+8. Update Cargo.toml dependencies:
+   - serde = { version = "1.0", features = ["derive"] }
+   - toml = "0.8"
+   - anyhow = "1.0" (for error handling)
+   - tempfile = "3.0" (dev-dependency for tests)
+"""
+backup = "If TOML parsing becomes complex, use serde_json for initial prototype and migrate to TOML later. JSON works but loses human-readability benefits. Alternatively, use RON (Rusty Object Notation) which has better Rust ergonomics but less ecosystem support."
+
+[context]
+files = ["src/arf.rs", "Cargo.toml", "tests/arf_tests.rs", "tests/fixtures/decision.arf"]
+dependencies = ["serde", "toml", "anyhow"]

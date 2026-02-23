@@ -1,0 +1,19 @@
+what = "Adopt ActivityPub for federation"
+why = "Wide adoption (Mastodon, Pixelfed), reduces dev time"
+how = """Implement federation endpoints:
+1. WebFinger for discovery
+2. Actor document with public key
+3. Inbox for Follow activities
+4. Outbox for Create activities
+5. HTTP Signatures for delivery
+"""
+
+[context]
+files = ["app/services/activitypub/", "app/controllers/activitypub/"]
+commits = ["a1b2c3d", "e4f5g6h"]
+dependencies = ["httparty", "openssl"]
+
+[context.outcome]
+result = "success"
+lessons = "HTTP Signatures trickier than expected"
+implementation_pr = "https://github.com/user/repo/pull/55"

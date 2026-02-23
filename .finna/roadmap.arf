@@ -1,0 +1,134 @@
+what = "Rust CLI tool that learns codebase knowledge through incremental multi-model analysis"
+why = "Enable LLMs to query structured codebase knowledge (patterns, decisions, history) without re-analyzing entire repos. Incremental learning via manifest tracking makes updates fast and deterministic."
+
+[[steps]]
+order = 1
+name = "cargo-project-setup"
+summary = "Initialize Rust project with dependencies (clap, tokio, serde, toml, git2, anyhow)"
+depends_on = []
+
+[[steps]]
+order = 2
+name = "error-types"
+summary = "Define error types for manifest, git, LLM invocation, ARF parsing, and IO failures"
+depends_on = ["cargo-project-setup"]
+
+[[steps]]
+order = 3
+name = "arf-data-structures"
+summary = "Implement ARF file parser and writer (what/why/how/context TOML structure)"
+depends_on = ["error-types"]
+
+[[steps]]
+order = 4
+name = "manifest-tracking"
+summary = "Implement manifest.toml with file hashes (SHA-256), commit SHAs, scan timestamps, and pattern links"
+depends_on = ["error-types"]
+
+[[steps]]
+order = 5
+name = "init-command"
+summary = "Implement 'noggin init' to create .noggin/ directory structure and empty manifest.toml"
+depends_on = ["manifest-tracking", "arf-data-structures"]
+
+[[steps]]
+order = 6
+name = "git-history-traversal"
+summary = "Use git2-rs to walk commits chronologically and extract metadata (message, author, timestamp, diff stats)"
+depends_on = ["error-types"]
+
+[[steps]]
+order = 7
+name = "commit-significance-scoring"
+summary = "Score commits by diff size, file patterns (migrations/, core/), and message keywords (BREAKING, refactor, security)"
+depends_on = ["git-history-traversal"]
+
+[[steps]]
+order = 8
+name = "llm-claude-invocation"
+summary = "Invoke 'claude' CLI as child process, parse JSON output, handle errors and timeouts"
+depends_on = ["error-types"]
+
+[[steps]]
+order = 9
+name = "llm-codex-invocation"
+summary = "Invoke 'codex exec --json' CLI as child process, parse JSON output"
+depends_on = ["error-types"]
+
+[[steps]]
+order = 10
+name = "llm-gemini-invocation"
+summary = "Invoke 'npx @google/gemini-cli' as child process, parse output format"
+depends_on = ["error-types"]
+
+[[steps]]
+order = 11
+name = "parallel-model-analysis"
+summary = "Spawn Claude/Codex/Gemini concurrently with tokio, collect outputs, handle partial failures"
+depends_on = ["llm-claude-invocation", "llm-codex-invocation", "llm-gemini-invocation"]
+
+[[steps]]
+order = 12
+name = "consensus-synthesis"
+summary = "Reconcile multi-model outputs into unified ARF files, merge perspectives, resolve conflicts by majority vote"
+depends_on = ["parallel-model-analysis", "arf-data-structures"]
+
+[[steps]]
+order = 13
+name = "file-hash-tracking"
+summary = "Calculate SHA-256 hashes for analyzed files, store in manifest, detect changes on subsequent runs"
+depends_on = ["manifest-tracking"]
+
+[[steps]]
+order = 14
+name = "commit-tracking"
+summary = "Track processed commit SHAs in manifest, skip already-analyzed commits on incremental runs"
+depends_on = ["manifest-tracking", "git-history-traversal"]
+
+[[steps]]
+order = 15
+name = "pattern-invalidation"
+summary = "When file hash changes, mark ARF files referencing that file for re-analysis"
+depends_on = ["file-hash-tracking", "manifest-tracking"]
+
+[[steps]]
+order = 16
+name = "learn-command-initial"
+summary = "Implement 'noggin learn' for full analysis: scan all files, walk git history, invoke LLMs, write ARF files"
+depends_on = ["parallel-model-analysis", "consensus-synthesis", "commit-significance-scoring", "file-hash-tracking", "commit-tracking"]
+
+[[steps]]
+order = 17
+name = "learn-command-incremental"
+summary = "Extend 'noggin learn' to process only deltas: changed files and new commits based on manifest"
+depends_on = ["learn-command-initial", "pattern-invalidation"]
+
+[[steps]]
+order = 18
+name = "status-command"
+summary = "Implement 'noggin status' showing scanned files, pending changes, unprocessed commits"
+depends_on = ["manifest-tracking", "file-hash-tracking", "commit-tracking"]
+
+[[steps]]
+order = 19
+name = "query-engine"
+summary = "Implement 'noggin ask' using ripgrep to search ARF files, return matching knowledge with context"
+depends_on = ["arf-data-structures"]
+
+[[steps]]
+order = 20
+name = "mcp-server"
+summary = "Implement 'noggin serve' MCP server exposing read-only access to .noggin/ knowledge base"
+depends_on = ["query-engine"]
+
+[[steps]]
+order = 21
+name = "integration-tests"
+summary = "Create test fixtures (sample repo with commits) and test full learn/query cycle"
+depends_on = ["learn-command-incremental", "query-engine"]
+
+[[steps]]
+order = 22
+name = "cli-polish"
+summary = "Add progress bars, colorized output, --verify flag, help text, and shell completions"
+depends_on = ["init-command", "learn-command-incremental", "status-command", "query-engine", "mcp-server"]

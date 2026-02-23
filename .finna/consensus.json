@@ -1,0 +1,50 @@
+```json
+{
+  "approach": "Build noggin as a Rust CLI tool that learns about codebases through deterministic, incremental analysis. Core innovation is manifest.toml tracking (file hashes + commit SHAs) enabling stable output and delta-only processing. Implementation phases: (1) Core ARF storage and manifest tracking, (2) Git history analysis with chronological traversal and significance scoring, (3) Multi-model LLM integration via child process invocation of existing CLI tools (claude, codex, gemini-cli), (4) Consensus synthesis reconciling model perspectives into unified knowledge, (5) Query engine with grep-based search (defer semantic search to v2), (6) MCP server for read-only tool integration. Pattern invalidation when contributing files change ensures knowledge stays current. All knowledge stored as human-readable ARF files with commit/PR links in context sections.",
+  
+  "key_decisions": [
+    "Use manifest.toml with SHA-256 file hashes and commit SHAs to enable incremental learning - only re-analyze changed files and new commits on subsequent runs",
+    "Invoke LLM CLIs as child processes (claude, codex exec --json, npx @google/gemini-cli) rather than building API clients - simpler implementation and leverages user's existing installed tools",
+    "Store all knowledge as ARF files (TOML) in .noggin/ directory with what/why/how/context structure - human-readable, git-friendly, and context section perfect for commit links and file paths",
+    "Implement consensus synthesis phase after parallel model analysis - reconcile different model perspectives (Claude architecture, Codex conventions, Gemini dependencies) into unified knowledge base",
+    "Build git history graph chronologically with significance scoring - identify commits worth extracting (architectural decisions, migrations, major bug fixes) based on diff size, file patterns, commit message keywords",
+    "Pattern invalidation strategy: when file hash changes in manifest, mark patterns that referenced that file for re-analysis - ensures patterns stay current with codebase evolution",
+    "Query engine uses simple ripgrep over ARF files initially (grep -r in .noggin/) - faster to build, good enough for MVP, defer semantic search with embeddings to v2",
+    "MCP server exposes read-only access to .noggin/ knowledge base - other LLM tools can query without re-analyzing entire codebase",
+    "Commit tracking in manifest prevents re-processing: maintain processed_commits list with SHAs, only analyze new commits since last noggin learn run",
+    "Use git2-rs for all git operations (history traversal, diff analysis, commit metadata) - mature Rust library with good performance",
+    "ARF file organization: decisions/ (architectural choices), migrations/ (evolution over time), bugs/ (notable fixes with lessons), patterns/ (code conventions from analysis), facts/ (dependencies, tech stack)",
+    "Parallel model invocation: spawn Claude/Codex/Gemini processes concurrently with tokio, collect outputs, synthesize consensus - faster than sequential",
+    "Deterministic output guarantee: same codebase state (file hashes + commit SHAs) produces same ARF files - enables testing and trust in incremental updates"
+  ],
+  
+  "files": [
+    "Cargo.toml",
+    "src/main.rs",
+    "src/commands/mod.rs",
+    "src/commands/init.rs",
+    "src/commands/learn.rs",
+    "src/commands/ask.rs",
+    "src/commands/serve.rs",
+    "src/commands/status.rs",
+    "src/manifest.rs",
+    "src/arf.rs",
+    "src/git_history.rs",
+    "src/significance.rs",
+    "src/llm/mod.rs",
+    "src/llm/claude.rs",
+    "src/llm/codex.rs",
+    "src/llm/gemini.rs",
+    "src/llm/synthesis.rs",
+    "src/query.rs",
+    "src/mcp_server.rs",
+    "src/error.rs",
+    "tests/integration_test.rs",
+    "tests/fixtures/sample_repo/.git",
+    "tests/fixtures/sample_arf/decisions/example.arf",
+    ".noggin/manifest.toml.example",
+    "README.md",
+    "LICENSE"
+  ]
+}
+```
