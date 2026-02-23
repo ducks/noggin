@@ -23,4 +23,4 @@ sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
-tempfile = "3.0"
+tempfile = "3.10"
