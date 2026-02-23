@@ -1,6 +1,7 @@
 pub mod arf;
 pub mod commands;
 pub mod error;
+pub mod git;
 pub mod manifest;
 
 pub use arf::{ArfFile, ArfContext};
