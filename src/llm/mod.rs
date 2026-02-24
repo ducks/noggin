@@ -4,6 +4,7 @@
 //! Each provider implements the LLMProvider trait for consistent querying.
 
 pub mod claude;
+pub mod codex;
 
 use crate::error::{Error, LlmError};
 
