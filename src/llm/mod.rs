@@ -5,6 +5,7 @@
 
 pub mod claude;
 pub mod codex;
+pub mod gemini;
 
 use crate::error::{Error, LlmError};
 
