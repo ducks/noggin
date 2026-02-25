@@ -26,6 +26,8 @@ pub enum Error {
     Arf(ArfError),
     /// I/O errors
     Io(IoError),
+    /// Synthesis errors (consensus merging)
+    Synthesis(SynthesisError),
 }
 
 /// Manifest operation errors
@@ -82,6 +84,17 @@ pub enum ArfError {
     InvalidPath(String),
 }
 
+/// Synthesis (consensus merging) errors
+#[derive(Debug)]
+pub enum SynthesisError {
+    /// Failed to parse model output into ARF entries
+    ParseFailed { model: String, details: String },
+    /// No valid ARF entries found across all model outputs
+    NoValidEntries,
+    /// Conflict could not be resolved by any strategy
+    UnresolvableConflict { field: String, models: Vec<String> },
+}
+
 /// File I/O errors
 #[derive(Debug)]
 pub enum IoError {
@@ -105,6 +118,7 @@ impl fmt::Display for Error {
             Error::Llm(e) => write!(f, "LLM error: {}", e),
             Error::Arf(e) => write!(f, "ARF error: {}", e),
             Error::Io(e) => write!(f, "I/O error: {}", e),
+            Error::Synthesis(e) => write!(f, "Synthesis error: {}", e),
         }
     }
 }
@@ -199,6 +213,27 @@ impl fmt::Display for ArfError {
     }
 }
 
+impl fmt::Display for SynthesisError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SynthesisError::ParseFailed { model, details } => {
+                write!(f, "Failed to parse {} output: {}", model, details)
+            }
+            SynthesisError::NoValidEntries => {
+                write!(f, "No valid ARF entries found in any model output")
+            }
+            SynthesisError::UnresolvableConflict { field, models } => {
+                write!(
+                    f,
+                    "Unresolvable conflict on field '{}' between models: {}",
+                    field,
+                    models.join(", ")
+                )
+            }
+        }
+    }
+}
+
 impl fmt::Display for IoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -236,6 +271,7 @@ impl std::error::Error for ManifestError {}
 impl std::error::Error for GitError {}
 impl std::error::Error for LlmError {}
 impl std::error::Error for ArfError {}
+impl std::error::Error for SynthesisError {}
 impl std::error::Error for IoError {}
 
 // Conversion from std::io::Error
@@ -274,6 +310,7 @@ impl Error {
             Error::Llm(e) => format!("llm: {}", e),
             Error::Arf(e) => format!("arf: {}", e),
             Error::Io(e) => format!("io: {}", e),
+            Error::Synthesis(e) => format!("synthesis: {}", e),
         }
     }
 }

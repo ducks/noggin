@@ -14,6 +14,19 @@ pub struct Manifest {
     pub commits: HashMap<String, CommitEntry>,
     #[serde(default)]
     pub patterns: HashMap<String, PatternEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synthesis: Option<SynthesisMetadata>,
+}
+
+/// Metadata about the last synthesis run
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SynthesisMetadata {
+    pub last_run: DateTime<Utc>,
+    pub models_used: Vec<String>,
+    pub input_arfs: usize,
+    pub output_arfs: usize,
+    pub conflicts_resolved: usize,
+    pub model_agreement_pct: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
