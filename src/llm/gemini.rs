@@ -50,7 +50,7 @@ impl GeminiClient {
             .map_err(|_| Error::Llm(LlmError::RequestFailed {
                 model: "gemini".to_string(),
                 source: format!("Timeout after {}s", self.timeout_secs),
-            }))??
+            }))?
             .map_err(|e| Error::Llm(LlmError::RequestFailed {
                 model: "gemini".to_string(),
                 source: format!("Process error: {}", e),
