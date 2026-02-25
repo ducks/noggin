@@ -6,8 +6,9 @@
 pub mod claude;
 pub mod codex;
 pub mod gemini;
+pub mod parallel;
 
-use crate::error::{Error, LlmError};
+use crate::error::Error;
 
 /// Common trait for LLM providers
 #[async_trait::async_trait]

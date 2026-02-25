@@ -7,7 +7,6 @@ use crate::error::{Error, LlmError};
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tracing::{debug, warn};
 
@@ -103,7 +102,7 @@ impl ClaudeClient {
                     model: "claude".to_string(),
                     source: format!("Timeout after {}s", self.config.timeout_secs),
                 })
-            })??
+            })?
             .map_err(|e| {
                 Error::Llm(LlmError::RequestFailed {
                     model: "claude".to_string(),
