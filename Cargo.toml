@@ -26,6 +26,8 @@ async-trait = "0.1"
 regex = "1.10"
 futures = "0.3"
 edit-distance = "2.1"
+walkdir = "2"
+indicatif = "0.17"
 
 [dev-dependencies]
 tempfile = "3.10"

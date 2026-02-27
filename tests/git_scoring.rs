@@ -1,5 +1,5 @@
 use git2::Repository;
-use noggin::git::scoring::{score_commit, ScoreCategory, ScoringConfig};
+use llm_noggin::git::scoring::{score_commit, ScoreCategory, ScoringConfig};
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -51,7 +51,7 @@ fn create_commit(
         &sig,
         message,
         &tree,
-        &parents.iter().collect::<Vec<_>>(),
+        &parents,
     )
     .unwrap()
 }
@@ -100,7 +100,7 @@ fn test_score_breaking_change() {
     let oid = create_commit(
         &repo,
         "src/api.rs",
-        "pub fn new_api() {}".repeat(20),
+        &"pub fn new_api() {}".repeat(20),
         "BREAKING CHANGE: Remove old API endpoints",
     );
     let commit = repo.find_commit(oid).unwrap();

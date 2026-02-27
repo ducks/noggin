@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use llm_noggin::commands::init::init_command;
+use llm_noggin::commands::learn::learn_command;
 use llm_noggin::git::walker::{walk_commits, WalkOptions};
 use std::env;
 
@@ -15,55 +16,53 @@ struct Cli {
 enum Commands {
     /// Initialize .noggin/ directory in current repository
     Init,
-    
+
     /// Analyze codebase and generate/update knowledge base
     Learn {
         /// Verify manifest without overwriting
         #[arg(long)]
         verify: bool,
+
+        /// Force full analysis (ignore manifest, re-analyze everything)
+        #[arg(long)]
+        full: bool,
     },
-    
+
     /// Query the knowledge base
     Ask {
         /// Question to ask about the codebase
         query: String,
     },
-    
+
     /// Start MCP server for tool integration
     Serve,
-    
+
     /// Show what's scanned and what's pending
     Status,
-    
+
     /// Walk git commits and display metadata (debug)
     GitWalk {
         /// Start from specific commit hash
         #[arg(long)]
         since: Option<String>,
-        
+
         /// Limit number of commits to show
         #[arg(long)]
         limit: Option<usize>,
-        
+
         /// Output as JSON
         #[arg(long)]
         json: bool,
     },
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    
+
     match cli.command {
         Commands::Init => init_command(),
-        Commands::Learn { verify } => {
-            if verify {
-                println!("[noggin learn --verify] Not implemented yet");
-            } else {
-                println!("[noggin learn] Not implemented yet");
-            }
-            Ok(())
-        }
+        Commands::Learn { verify, full } => learn_command(full, verify).await,
         Commands::Ask { query } => {
             println!("[noggin ask] Query: {}", query);
             println!("Not implemented yet");
@@ -84,9 +83,9 @@ fn main() -> anyhow::Result<()> {
                 limit,
                 ..Default::default()
             };
-            
+
             let result = walk_commits(&repo_path, options)?;
-            
+
             if json {
                 println!("{}", serde_json::to_string_pretty(&result.commits)?);
             } else {
@@ -99,16 +98,18 @@ fn main() -> anyhow::Result<()> {
                     println!();
                     println!("    {}", commit.message_summary);
                     println!();
-                    println!("    {} files changed, {} insertions(+), {} deletions(-)",
-                        commit.files_changed, commit.insertions, commit.deletions);
+                    println!(
+                        "    {} files changed, {} insertions(+), {} deletions(-)",
+                        commit.files_changed, commit.insertions, commit.deletions
+                    );
                     println!();
                 }
-                
+
                 if let Some(next_hash) = result.next_hash {
                     println!("More commits available. Resume with: --since {}", next_hash);
                 }
             }
-            
+
             Ok(())
         }
     }
