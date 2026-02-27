@@ -1,8 +1,10 @@
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use llm_noggin::commands::init::init_command;
 use llm_noggin::commands::learn::learn_command;
 use llm_noggin::commands::status::status_command;
 use llm_noggin::git::walker::{walk_commits, WalkOptions};
+use llm_noggin::query::{QueryEngine, QueryOptions};
 use std::env;
 
 #[derive(Parser)]
@@ -33,6 +35,18 @@ enum Commands {
     Ask {
         /// Question to ask about the codebase
         query: String,
+
+        /// Maximum number of results (default 10)
+        #[arg(long, default_value = "10")]
+        max_results: usize,
+
+        /// Filter by category (decisions, patterns, bugs, migrations, facts)
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Start MCP server for tool integration
@@ -72,9 +86,51 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Init => init_command(),
         Commands::Learn { verify, full } => learn_command(full, verify).await,
-        Commands::Ask { query } => {
-            println!("[noggin ask] Query: {}", query);
-            println!("Not implemented yet");
+        Commands::Ask { query, max_results, category, json } => {
+            let repo_path = env::current_dir()?;
+            let noggin_path = repo_path.join(".noggin");
+
+            if !noggin_path.exists() {
+                anyhow::bail!("Not initialized. Run 'noggin init' first.");
+            }
+
+            let engine = QueryEngine::new(noggin_path);
+            let opts = QueryOptions {
+                max_results,
+                category,
+            };
+
+            let results = engine.search(&query, &opts)?;
+
+            if results.is_empty() {
+                if json {
+                    println!("[]");
+                } else {
+                    println!("No results for \"{}\"", query);
+                    println!("Try a broader query or run {} to learn more.", "'noggin learn'".cyan());
+                }
+                return Ok(());
+            }
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+                return Ok(());
+            }
+
+            println!("{} results for \"{}\"\n", results.len(), query);
+
+            let mut current_category = String::new();
+            for result in &results {
+                if result.category != current_category {
+                    current_category = result.category.clone();
+                    println!("{}", current_category.to_uppercase().bold());
+                }
+                println!("  {} {}", result.file_path.dimmed(), format!("[{}]", result.matched_fields.join(", ")).dimmed());
+                println!("  {}", result.what.cyan());
+                println!("  {}", result.why);
+                println!();
+            }
+
             Ok(())
         }
         Commands::Serve => {

@@ -5,6 +5,7 @@ pub mod git;
 pub mod learn;
 pub mod llm;
 pub mod manifest;
+pub mod query;
 pub mod synthesis;
 
 pub use arf::{ArfFile, ArfContext};
