@@ -2,6 +2,7 @@ pub mod arf;
 pub mod commands;
 pub mod error;
 pub mod git;
+pub mod learn;
 pub mod llm;
 pub mod manifest;
 pub mod synthesis;

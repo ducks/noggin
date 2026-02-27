@@ -30,7 +30,7 @@ pub fn group_by_category(
 }
 
 /// Infer category from ARF content keywords
-fn infer_category(arf: &ArfFile) -> ArfCategory {
+pub fn infer_category(arf: &ArfFile) -> ArfCategory {
     let combined = format!(
         "{} {} {}",
         arf.what.to_lowercase(),
