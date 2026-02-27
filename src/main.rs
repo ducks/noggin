@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use llm_noggin::commands::init::init_command;
 use llm_noggin::commands::learn::learn_command;
+use llm_noggin::commands::status::status_command;
 use llm_noggin::git::walker::{walk_commits, WalkOptions};
 use std::env;
 
@@ -38,7 +39,15 @@ enum Commands {
     Serve,
 
     /// Show what's scanned and what's pending
-    Status,
+    Status {
+        /// Show detailed file and commit listings
+        #[arg(long, short)]
+        verbose: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Walk git commits and display metadata (debug)
     GitWalk {
@@ -72,10 +81,7 @@ async fn main() -> anyhow::Result<()> {
             println!("[noggin serve] Not implemented yet");
             Ok(())
         }
-        Commands::Status => {
-            println!("[noggin status] Not implemented yet");
-            Ok(())
-        }
+        Commands::Status { verbose, json } => status_command(verbose, json),
         Commands::GitWalk { since, limit, json } => {
             let repo_path = env::current_dir()?;
             let options = WalkOptions {
