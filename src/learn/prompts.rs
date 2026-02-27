@@ -115,6 +115,72 @@ pub fn build_commit_analysis_prompt(commits: &[CommitMetadata]) -> String {
     prompt
 }
 
+/// Build a prompt for re-analyzing invalidated patterns.
+///
+/// Takes the names of patterns that need re-analysis and the files
+/// that contribute to those patterns. Asks models to re-evaluate
+/// whether the patterns still hold given the updated file contents.
+pub fn build_pattern_reanalysis_prompt(
+    repo_path: &Path,
+    pattern_ids: &[String],
+    files: &[FileToAnalyze],
+) -> String {
+    let mut prompt = String::from(
+        "The following codebase patterns were previously identified but the \
+         files they reference have changed. Re-analyze the files below and \
+         determine if these patterns still hold, need updating, or should \
+         be replaced.\n\n\
+         Output your findings as TOML entries using this exact format:\n\n\
+         ```\n\
+         [[entry]]\n\
+         what = \"one-sentence description of the pattern\"\n\
+         why = \"reasoning, noting any changes from the previous pattern\"\n\
+         how = \"current implementation approach based on the updated files\"\n\n\
+         [entry.context]\n\
+         files = [\"path/to/file.rs\"]\n\
+         ```\n\n\
+         If a pattern no longer applies, omit it. If it changed, describe \
+         the updated version.\n\n",
+    );
+
+    prompt.push_str("--- PATTERNS TO RE-ANALYZE ---\n\n");
+    for id in pattern_ids {
+        prompt.push_str(&format!("- {}\n", id));
+    }
+    prompt.push_str("\n");
+
+    prompt.push_str("--- CONTRIBUTING FILES ---\n\n");
+
+    let limit = files.len().min(MAX_FILES_PER_PROMPT);
+    for file in &files[..limit] {
+        let full_path = repo_path.join(&file.path);
+        prompt.push_str(&format!("=== {} ({} bytes) ===\n", file.path, file.size));
+
+        if let Ok(contents) = fs::read_to_string(&full_path) {
+            let truncated: String = contents
+                .lines()
+                .take(MAX_LINES_PER_FILE)
+                .collect::<Vec<_>>()
+                .join("\n");
+            prompt.push_str(&truncated);
+
+            let line_count = contents.lines().count();
+            if line_count > MAX_LINES_PER_FILE {
+                prompt.push_str(&format!(
+                    "\n... ({} more lines truncated)\n",
+                    line_count - MAX_LINES_PER_FILE
+                ));
+            }
+        } else {
+            prompt.push_str("(unable to read file)\n");
+        }
+
+        prompt.push_str("\n\n");
+    }
+
+    prompt
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,5 +290,25 @@ mod tests {
 
         assert!(prompt.contains("Refactor database layer"));
         assert!(prompt.contains("Fix auth bypass vulnerability"));
+    }
+
+    #[test]
+    fn test_pattern_reanalysis_prompt_includes_patterns_and_files() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(
+            temp_dir.path().join("errors.rs"),
+            "pub fn handle_error(e: Error) {\n    log::error!(\"{}\", e);\n}\n",
+        )
+        .unwrap();
+
+        let patterns = vec!["error-handling".to_string()];
+        let files = vec![make_file("errors.rs", "abc123", 50)];
+        let prompt = build_pattern_reanalysis_prompt(temp_dir.path(), &patterns, &files);
+
+        assert!(prompt.contains("PATTERNS TO RE-ANALYZE"));
+        assert!(prompt.contains("error-handling"));
+        assert!(prompt.contains("errors.rs"));
+        assert!(prompt.contains("handle_error"));
+        assert!(prompt.contains("still hold"));
     }
 }

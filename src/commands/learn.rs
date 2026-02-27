@@ -2,11 +2,18 @@
 //!
 //! Scans files, walks git history, invokes LLMs in parallel,
 //! synthesizes consensus, writes ARF files, and updates the manifest.
+//!
+//! In incremental mode (default), only changed files and new commits are
+//! processed. Patterns referencing changed files are invalidated and
+//! re-analyzed. Deleted files are cleaned from the manifest.
 
 use crate::git::scoring::{score_commit, ScoreCategory, ScoringConfig};
 use crate::git::walker::{walk_commits, WalkOptions};
-use crate::learn::prompts::{build_commit_analysis_prompt, build_file_analysis_prompt};
-use crate::learn::scanner::scan_files;
+use crate::learn::prompts::{
+    build_commit_analysis_prompt, build_file_analysis_prompt,
+    build_pattern_reanalysis_prompt,
+};
+use crate::learn::scanner::{scan_files, FileToAnalyze};
 use crate::learn::writer::write_arfs;
 use crate::llm::claude::ClaudeClient;
 use crate::llm::codex::CodexClient;
@@ -17,13 +24,17 @@ use crate::manifest::{CommitCategory, Manifest};
 use crate::synthesis::{self, ModelOutput};
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::HashSet;
 use std::env;
+use std::path::Path;
 use tracing::info;
 
 /// Run the learn command.
 ///
 /// If `full` is true, ignores the manifest and re-analyzes everything.
 /// If `verify` is true, shows what would be done without writing anything.
+/// Returns Ok(()) on success. In verify mode, returns an error if drift
+/// is detected (for use as a CI check).
 pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
     let repo_path = env::current_dir()?;
     let noggin_path = repo_path.join(".noggin");
@@ -49,9 +60,10 @@ pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
     let scan_result = scan_files(&repo_path, &manifest, full)
         .context("Failed to scan files")?;
     pb.finish_with_message(format!(
-        "Scanned {} files ({} changed, {} unchanged)",
+        "Scanned {} files ({} changed, {} deleted, {} unchanged)",
         scan_result.total,
         scan_result.changed.len(),
+        scan_result.deleted.len(),
         scan_result.unchanged
     ));
 
@@ -100,13 +112,68 @@ pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
         significant_commits.len()
     ));
 
-    // Step 4: Check if there's work to do
-    if scan_result.changed.is_empty() && significant_commits.is_empty() {
+    // Step 4: Detect invalidated patterns from changed/deleted files
+    let invalidated_patterns = find_invalidated_patterns(
+        &manifest,
+        &scan_result.changed,
+        &scan_result.deleted,
+    );
+
+    if !invalidated_patterns.is_empty() {
+        println!(
+            "  {} patterns invalidated by file changes",
+            invalidated_patterns.len()
+        );
+    }
+
+    // Step 5: Check if there's work to do
+    let has_work = !scan_result.changed.is_empty()
+        || !significant_commits.is_empty()
+        || !scan_result.deleted.is_empty()
+        || !invalidated_patterns.is_empty();
+
+    if !has_work {
         println!("Nothing to learn. Codebase is up to date.");
         return Ok(());
     }
 
-    // Step 5: Build prompts
+    // Step 6: Verify mode - report drift without updating
+    if verify {
+        println!("\n--- Verify Mode (no files written) ---");
+
+        if !scan_result.changed.is_empty() {
+            println!("{} files changed:", scan_result.changed.len());
+            for f in &scan_result.changed {
+                let label = if f.is_new { "new" } else { "modified" };
+                println!("  {} [{}]", f.path, label);
+            }
+        }
+
+        if !scan_result.deleted.is_empty() {
+            println!("{} files deleted:", scan_result.deleted.len());
+            for path in &scan_result.deleted {
+                println!("  {}", path);
+            }
+        }
+
+        if !significant_commits.is_empty() {
+            println!("{} commits unprocessed:", significant_commits.len());
+            for c in &significant_commits {
+                println!("  {} {}", c.short_hash, c.message_summary);
+            }
+        }
+
+        if !invalidated_patterns.is_empty() {
+            println!("{} patterns need re-analysis:", invalidated_patterns.len());
+            for p in &invalidated_patterns {
+                println!("  {}", p);
+            }
+        }
+
+        anyhow::bail!("Drift detected. Run 'noggin learn' to update.");
+    }
+
+    // Step 7: Build prompts
     let mut prompts = Vec::new();
 
     if !scan_result.changed.is_empty() {
@@ -119,7 +186,20 @@ pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
         prompts.push(("commits".to_string(), commit_prompt));
     }
 
-    // Step 6: Invoke LLMs in parallel
+    // Build re-analysis prompt for invalidated patterns
+    if !invalidated_patterns.is_empty() {
+        let pattern_files = collect_pattern_files(&manifest, &invalidated_patterns, &repo_path);
+        if !pattern_files.is_empty() {
+            let pattern_prompt = build_pattern_reanalysis_prompt(
+                &repo_path,
+                &invalidated_patterns,
+                &pattern_files,
+            );
+            prompts.push(("patterns".to_string(), pattern_prompt));
+        }
+    }
+
+    // Step 8: Invoke LLMs in parallel
     let providers: Vec<Box<dyn LLMProvider>> = vec![
         Box::new(ClaudeClient::new()),
         Box::new(CodexClient::new()),
@@ -182,7 +262,7 @@ pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
         }
     }
 
-    // Step 7: Synthesize consensus
+    // Step 9: Synthesize consensus
     let unified_arfs = if all_model_outputs.is_empty() {
         warnings.push("No model outputs to synthesize".to_string());
         Vec::new()
@@ -208,23 +288,7 @@ pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
         }
     };
 
-    // Step 8: Verify mode - just print what would happen
-    if verify {
-        println!("\n--- Verify Mode (no files written) ---");
-        println!("Would write {} ARF files:", unified_arfs.len());
-        for arf in &unified_arfs {
-            println!("  - {}", arf.what);
-        }
-        println!("{} file hashes would be updated", scan_result.changed.len());
-        println!(
-            "{} commits would be marked as processed",
-            significant_commits.len()
-        );
-        print_warnings(&warnings);
-        return Ok(());
-    }
-
-    // Step 9: Write ARF files
+    // Step 10: Write ARF files
     if !unified_arfs.is_empty() {
         let pb = spinner("Writing ARF files...");
         let write_result = write_arfs(&noggin_path, &unified_arfs)
@@ -235,12 +299,22 @@ pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
         ));
     }
 
-    // Step 10: Update manifest
+    // Step 11: Update manifest
     let pb = spinner("Updating manifest...");
+
+    // Remove deleted files
+    for path in &scan_result.deleted {
+        manifest.remove_file(path);
+    }
 
     // Update file hashes
     for file in &scan_result.changed {
         manifest.add_or_update_file(file.path.clone(), file.hash.clone(), vec![]);
+    }
+
+    // Invalidate affected patterns
+    for pattern_id in &invalidated_patterns {
+        manifest.invalidate_pattern(pattern_id);
     }
 
     // Update commit entries
@@ -249,7 +323,7 @@ pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
         manifest.add_commit(
             commit.hash.clone(),
             category,
-            String::new(), // ARF path filled in later when we have better tracking
+            String::new(),
         );
     }
 
@@ -259,16 +333,85 @@ pub async fn learn_command(full: bool, verify: bool) -> Result<()> {
 
     pb.finish_with_message("Manifest updated");
 
-    // Step 11: Print summary
+    // Step 12: Print summary
     println!();
     println!("=== Learn Complete ===");
-    println!("  Files analyzed:    {}", scan_result.changed.len());
-    println!("  Commits processed: {}", significant_commits.len());
-    println!("  ARF entries:       {}", unified_arfs.len());
+    println!("  Files analyzed:        {}", scan_result.changed.len());
+    println!("  Files deleted:         {}", scan_result.deleted.len());
+    println!("  Commits processed:     {}", significant_commits.len());
+    println!("  Patterns invalidated:  {}", invalidated_patterns.len());
+    println!("  ARF entries:           {}", unified_arfs.len());
 
     print_warnings(&warnings);
 
     Ok(())
+}
+
+/// Find patterns that need re-analysis due to changed or deleted files.
+///
+/// Looks up each changed/deleted file in the manifest to find patterns
+/// that reference it. Returns the set of unique pattern IDs to re-analyze.
+fn find_invalidated_patterns(
+    manifest: &Manifest,
+    changed: &[FileToAnalyze],
+    deleted: &[String],
+) -> Vec<String> {
+    let mut invalidated: HashSet<String> = HashSet::new();
+
+    for file in changed {
+        for pattern_id in manifest.get_patterns_for_file(&file.path) {
+            invalidated.insert(pattern_id);
+        }
+    }
+
+    for path in deleted {
+        for pattern_id in manifest.get_patterns_for_file(path) {
+            invalidated.insert(pattern_id);
+        }
+    }
+
+    let mut result: Vec<String> = invalidated.into_iter().collect();
+    result.sort();
+    result
+}
+
+/// Collect all contributing files for a set of patterns.
+///
+/// Returns FileToAnalyze structs for files that contribute to the
+/// invalidated patterns (reading current content from disk).
+fn collect_pattern_files(
+    manifest: &Manifest,
+    pattern_ids: &[String],
+    repo_path: &Path,
+) -> Vec<FileToAnalyze> {
+    let mut files: HashSet<String> = HashSet::new();
+
+    for pattern_id in pattern_ids {
+        if let Some(pattern) = manifest.patterns.get(pattern_id) {
+            for file_path in &pattern.contributing_files {
+                files.insert(file_path.clone());
+            }
+        }
+    }
+
+    files
+        .into_iter()
+        .filter_map(|path| {
+            let full_path = repo_path.join(&path);
+            if !full_path.exists() {
+                return None;
+            }
+            let metadata = std::fs::metadata(&full_path).ok()?;
+            let hash = crate::manifest::calculate_file_hash(&full_path).ok()?;
+            Some(FileToAnalyze {
+                path,
+                hash,
+                size: metadata.len(),
+                is_new: false,
+                is_changed: true,
+            })
+        })
+        .collect()
 }
 
 /// Infer a commit category from its message
@@ -310,6 +453,7 @@ fn print_warnings(warnings: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::learn::scanner::FileToAnalyze;
 
     #[test]
     fn test_infer_commit_category_bug() {
@@ -345,5 +489,106 @@ mod tests {
             infer_commit_category("Refactor authentication module"),
             CommitCategory::Decision
         ));
+    }
+
+    #[test]
+    fn test_find_invalidated_patterns_from_changed_files() {
+        let mut manifest = Manifest::default();
+        manifest.add_or_update_file(
+            "src/errors.rs".to_string(),
+            "hash1".to_string(),
+            vec!["error-handling".to_string()],
+        );
+        manifest.add_or_update_file(
+            "src/api.rs".to_string(),
+            "hash2".to_string(),
+            vec!["api-patterns".to_string(), "error-handling".to_string()],
+        );
+
+        let changed = vec![FileToAnalyze {
+            path: "src/errors.rs".to_string(),
+            hash: "new_hash".to_string(),
+            size: 100,
+            is_new: false,
+            is_changed: true,
+        }];
+
+        let result = find_invalidated_patterns(&manifest, &changed, &[]);
+
+        assert_eq!(result, vec!["error-handling"]);
+    }
+
+    #[test]
+    fn test_find_invalidated_patterns_from_deleted_files() {
+        let mut manifest = Manifest::default();
+        manifest.add_or_update_file(
+            "src/old.rs".to_string(),
+            "hash1".to_string(),
+            vec!["legacy-patterns".to_string()],
+        );
+
+        let deleted = vec!["src/old.rs".to_string()];
+        let result = find_invalidated_patterns(&manifest, &[], &deleted);
+
+        assert_eq!(result, vec!["legacy-patterns"]);
+    }
+
+    #[test]
+    fn test_find_invalidated_patterns_deduplicates() {
+        let mut manifest = Manifest::default();
+        manifest.add_or_update_file(
+            "src/a.rs".to_string(),
+            "hash1".to_string(),
+            vec!["shared-pattern".to_string()],
+        );
+        manifest.add_or_update_file(
+            "src/b.rs".to_string(),
+            "hash2".to_string(),
+            vec!["shared-pattern".to_string()],
+        );
+
+        let changed = vec![
+            FileToAnalyze {
+                path: "src/a.rs".to_string(),
+                hash: "new1".to_string(),
+                size: 100,
+                is_new: false,
+                is_changed: true,
+            },
+            FileToAnalyze {
+                path: "src/b.rs".to_string(),
+                hash: "new2".to_string(),
+                size: 200,
+                is_new: false,
+                is_changed: true,
+            },
+        ];
+
+        let result = find_invalidated_patterns(&manifest, &changed, &[]);
+
+        // Should only appear once despite both files referencing it
+        assert_eq!(result, vec!["shared-pattern"]);
+    }
+
+    #[test]
+    fn test_find_invalidated_patterns_empty_when_no_patterns() {
+        let mut manifest = Manifest::default();
+        manifest.add_or_update_file(
+            "src/main.rs".to_string(),
+            "hash1".to_string(),
+            vec![], // No patterns linked
+        );
+
+        let changed = vec![FileToAnalyze {
+            path: "src/main.rs".to_string(),
+            hash: "new_hash".to_string(),
+            size: 100,
+            is_new: false,
+            is_changed: true,
+        }];
+
+        let result = find_invalidated_patterns(&manifest, &changed, &[]);
+
+        assert!(result.is_empty());
     }
 }

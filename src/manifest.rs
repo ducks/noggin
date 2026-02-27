@@ -164,6 +164,11 @@ impl Manifest {
         commits
     }
 
+    /// Remove a file entry from the manifest
+    pub fn remove_file(&mut self, path: &str) {
+        self.files.remove(path);
+    }
+
     /// Link a pattern to a contributing file
     pub fn link_pattern_to_file(&mut self, pattern_id: &str, file_path: &str) {
         // Add pattern_id to file's pattern list
