@@ -29,6 +29,8 @@ pub struct FileToAnalyze {
 pub struct ScanResult {
     /// Files that need analysis (new or changed)
     pub changed: Vec<FileToAnalyze>,
+    /// Files tracked in manifest but no longer on disk
+    pub deleted: Vec<String>,
     /// Number of unchanged files skipped
     pub unchanged: usize,
     /// Total files examined
@@ -47,6 +49,7 @@ pub fn scan_files(repo_path: &Path, manifest: &Manifest, full: bool) -> Result<S
     let mut changed = Vec::new();
     let mut unchanged = 0usize;
     let mut total = 0usize;
+    let mut seen_paths = std::collections::HashSet::new();
 
     for entry in WalkDir::new(repo_path)
         .follow_links(false)
@@ -82,6 +85,7 @@ pub fn scan_files(repo_path: &Path, manifest: &Manifest, full: bool) -> Result<S
         }
 
         total += 1;
+        seen_paths.insert(rel_path.clone());
 
         // Calculate hash
         let hash = calculate_file_hash(full_path)
@@ -114,8 +118,17 @@ pub fn scan_files(repo_path: &Path, manifest: &Manifest, full: bool) -> Result<S
         }
     }
 
+    // Detect files tracked in manifest but no longer on disk
+    let deleted: Vec<String> = manifest
+        .files
+        .keys()
+        .filter(|path| !seen_paths.contains(*path))
+        .cloned()
+        .collect();
+
     Ok(ScanResult {
         changed,
+        deleted,
         unchanged,
         total,
     })
@@ -272,6 +285,30 @@ mod tests {
         let binary_path = temp_dir.path().join("binary.bin");
         fs::write(&binary_path, &[0x00, 0x01, 0x02]).unwrap();
         assert!(is_binary(&binary_path));
+    }
+
+    #[test]
+    fn test_scan_detects_deleted_files() -> Result<()> {
+        let (temp_dir, _repo) = create_test_repo()?;
+
+        // Only hello.rs exists on disk
+        fs::write(temp_dir.path().join("hello.rs"), "fn main() {}")?;
+
+        // But manifest tracks both hello.rs and removed.rs
+        let mut manifest = Manifest::default();
+        manifest.add_or_update_file("hello.rs".to_string(), "old_hash".to_string(), vec![]);
+        manifest.add_or_update_file(
+            "removed.rs".to_string(),
+            "dead_hash".to_string(),
+            vec!["some-pattern".to_string()],
+        );
+
+        let result = scan_files(temp_dir.path(), &manifest, false)?;
+
+        assert_eq!(result.deleted.len(), 1);
+        assert_eq!(result.deleted[0], "removed.rs");
+
+        Ok(())
     }
 
     #[test]
