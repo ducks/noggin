@@ -1,6 +1,6 @@
 [package]
 name = "llm-noggin"
-version = "20260308.0.0"
+version = "20260308.0.1"
 edition = "2021"
 description = "Multi-model codebase knowledge extraction and querying tool"
 license = "MIT"
