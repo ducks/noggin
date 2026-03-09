@@ -29,6 +29,8 @@ edit-distance = "2.1"
 walkdir = "2"
 colored = "2"
 indicatif = "0.17"
+rmcp = { version = "0.16", features = ["server", "transport-io", "schemars"] }
+schemars = "1.0"
 
 [dev-dependencies]
 tempfile = "3.10"

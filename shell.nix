@@ -1,15 +1,22 @@
 { pkgs ? import <nixpkgs> {} }:
 
+let
+  rust-overlay = builtins.fetchTarball {
+    url = "https://github.com/oxalica/rust-overlay/archive/master.tar.gz";
+  };
+  pkgsWithOverlay = import <nixpkgs> {
+    overlays = [ (import rust-overlay) ];
+  };
+  rust = pkgsWithOverlay.rust-bin.stable.latest.default.override {
+    extensions = [ "rust-src" "rust-analyzer" "clippy" "rustfmt" ];
+  };
+in
 pkgs.mkShell {
-  buildInputs = with pkgs; [
-    rustc
-    cargo
-    rust-analyzer
-    clippy
-    rustfmt
-    pkg-config
-    openssl
-    git
+  buildInputs = [
+    rust
+    pkgs.pkg-config
+    pkgs.openssl
+    pkgs.git
 
     # For LLM CLI backends
     pkgs.nodejs_22
