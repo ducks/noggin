@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use llm_noggin::commands::init::init_command;
 use llm_noggin::commands::learn::learn_command;
+use llm_noggin::commands::serve::serve_command;
 use llm_noggin::commands::status::status_command;
 use llm_noggin::git::walker::{walk_commits, WalkOptions};
 use llm_noggin::query::{QueryEngine, QueryOptions};
@@ -133,10 +134,7 @@ async fn main() -> anyhow::Result<()> {
 
             Ok(())
         }
-        Commands::Serve => {
-            println!("[noggin serve] Not implemented yet");
-            Ok(())
-        }
+        Commands::Serve => serve_command().await,
         Commands::Status { verbose, json } => status_command(verbose, json),
         Commands::GitWalk { since, limit, json } => {
             let repo_path = env::current_dir()?;
